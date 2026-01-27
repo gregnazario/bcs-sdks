@@ -244,6 +244,26 @@ public class BcsTests
     }
 
     [Fact]
+    public void I16TestVectors()
+    {
+        var vectors = GetTestVectors("primitives", "i16", "valid");
+        if (vectors == null) return;
+
+        foreach (var tc in vectors)
+        {
+            var value = (short)tc.GetProperty("value").GetInt32();
+            var bcsHex = tc.GetProperty("bcs_hex").GetString()!;
+
+            var ser = new BcsSerializer();
+            ser.WriteI16(value);
+            Assert.Equal(bcsHex, BytesToHex(ser.ToArray()));
+
+            var des = new BcsDeserializer(HexToBytes(bcsHex));
+            Assert.Equal(value, des.ReadI16());
+        }
+    }
+
+    [Fact]
     public void I32TestVectors()
     {
         var vectors = GetTestVectors("primitives", "i32", "valid");
@@ -260,6 +280,69 @@ public class BcsTests
 
             var des = new BcsDeserializer(HexToBytes(bcsHex));
             Assert.Equal(value, des.ReadI32());
+        }
+    }
+
+    [Fact]
+    public void I64TestVectors()
+    {
+        var vectors = GetTestVectors("primitives", "i64", "valid");
+        if (vectors == null) return;
+
+        foreach (var tc in vectors)
+        {
+            var valueStr = tc.GetProperty("value").GetString()!;
+            var value = long.Parse(valueStr);
+            var bcsHex = tc.GetProperty("bcs_hex").GetString()!;
+
+            var ser = new BcsSerializer();
+            ser.WriteI64(value);
+            Assert.Equal(bcsHex, BytesToHex(ser.ToArray()));
+
+            var des = new BcsDeserializer(HexToBytes(bcsHex));
+            Assert.Equal(value, des.ReadI64());
+        }
+    }
+
+    [Fact]
+    public void I128TestVectors()
+    {
+        var vectors = GetTestVectors("primitives", "i128", "valid");
+        if (vectors == null) return;
+
+        foreach (var tc in vectors)
+        {
+            var valueStr = tc.GetProperty("value").GetString()!;
+            var value = BigInteger.Parse(valueStr);
+            var bcsHex = tc.GetProperty("bcs_hex").GetString()!;
+
+            var ser = new BcsSerializer();
+            ser.WriteI128(value);
+            Assert.Equal(bcsHex, BytesToHex(ser.ToArray()));
+
+            var des = new BcsDeserializer(HexToBytes(bcsHex));
+            Assert.Equal(value, des.ReadI128());
+        }
+    }
+
+    [Fact]
+    public void I256TestVectors()
+    {
+        var vectors = GetTestVectors("primitives", "i256", "valid");
+        if (vectors == null) return;
+
+        foreach (var tc in vectors)
+        {
+            var valueStr = tc.GetProperty("value").GetString()!;
+            var value = BigInteger.Parse(valueStr);
+            var bcsHex = tc.GetProperty("bcs_hex").GetString()!;
+
+            var ser = new BcsSerializer();
+            ser.WriteI256(value);
+            Assert.Equal(bcsHex, BytesToHex(ser.ToArray()));
+
+            var des = new BcsDeserializer(HexToBytes(bcsHex));
+            Assert.Equal(value, des.ReadI256());
         }
     }
 

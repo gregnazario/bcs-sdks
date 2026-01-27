@@ -311,15 +311,38 @@ defmodule BcsTest do
       end
     end
 
-    test "reject non-canonical encoding" do
+    test "reject non-canonical encoding (2-byte)" do
       # 0x80 0x00 is non-canonical for 0
       assert {:error, %Error{type: :non_canonical_uleb128}} = Uleb128.decode(<<0x80, 0x00>>)
+    end
+
+    test "reject non-canonical encoding (3-byte)" do
+      # 0x80 0x80 0x00 is non-canonical
+      assert {:error, %Error{type: :non_canonical_uleb128}} = Uleb128.decode(<<0x80, 0x80, 0x00>>)
+    end
+
+    test "reject non-canonical encoding (4-byte)" do
+      # 0x80 0x80 0x80 0x00 is non-canonical
+      assert {:error, %Error{type: :non_canonical_uleb128}} =
+               Uleb128.decode(<<0x80, 0x80, 0x80, 0x00>>)
+    end
+
+    test "reject non-canonical encoding (5-byte with trailing zero)" do
+      # 0x80 0x80 0x80 0x80 0x00 is non-canonical (could be encoded in 4 bytes)
+      assert {:error, %Error{type: :non_canonical_uleb128}} =
+               Uleb128.decode(<<0x80, 0x80, 0x80, 0x80, 0x00>>)
     end
 
     test "reject overflow" do
       # 6 bytes with continuation bits
       assert {:error, %Error{type: :uleb128_overflow}} =
                Uleb128.decode(<<0x80, 0x80, 0x80, 0x80, 0x80, 0x01>>)
+    end
+
+    test "reject overflow (5-byte value too large)" do
+      # 5th byte >= 0x10 would overflow u32
+      assert {:error, %Error{type: :uleb128_overflow}} =
+               Uleb128.decode(<<0x80, 0x80, 0x80, 0x80, 0x10>>)
     end
   end
 

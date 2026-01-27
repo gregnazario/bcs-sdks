@@ -90,11 +90,66 @@ class BcsTest {
         }
 
         @Test
+        fun `serialize i32`() {
+            val bytes = bcsSerialize { writeI32(-1) }
+            assertEquals(listOf(0xFF, 0xFF, 0xFF, 0xFF).map { it.toByte() }, bytes.toList())
+        }
+
+        @Test
+        fun `serialize i32 max`() {
+            val bytes = bcsSerialize { writeI32(2147483647) }
+            assertEquals(listOf(0xFF, 0xFF, 0xFF, 0x7F).map { it.toByte() }, bytes.toList())
+        }
+
+        @Test
+        fun `serialize i32 min`() {
+            val bytes = bcsSerialize { writeI32(-2147483648) }
+            assertEquals(listOf(0x00, 0x00, 0x00, 0x80).map { it.toByte() }, bytes.toList())
+        }
+
+        @Test
+        fun `serialize i64`() {
+            val bytes = bcsSerialize { writeI64(-1L) }
+            assertEquals(listOf(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF).map { it.toByte() }, bytes.toList())
+        }
+
+        @Test
+        fun `serialize i64 max`() {
+            val bytes = bcsSerialize { writeI64(9223372036854775807L) }
+            assertEquals(listOf(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F).map { it.toByte() }, bytes.toList())
+        }
+
+        @Test
+        fun `serialize i64 min`() {
+            val bytes = bcsSerialize { writeI64(Long.MIN_VALUE) }
+            assertEquals(listOf(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80).map { it.toByte() }, bytes.toList())
+        }
+
+        @Test
         fun `deserialize integers`() {
             val result = bcsDeserialize(byteArrayOf(0x2a, 0x34, 0x12)) {
                 Pair(readU8(), readU16())
             }
             assertEquals(Pair(42, 0x1234), result)
+        }
+
+        @Test
+        fun `deserialize i32`() {
+            val result = bcsDeserialize(byteArrayOf(0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte())) {
+                readI32()
+            }
+            assertEquals(-1, result)
+        }
+
+        @Test
+        fun `deserialize i64`() {
+            val result = bcsDeserialize(byteArrayOf(
+                0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(),
+                0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte()
+            )) {
+                readI64()
+            }
+            assertEquals(-1L, result)
         }
     }
 
@@ -299,6 +354,140 @@ class BcsTest {
 
             val result = bcsDeserialize(bytes) { readU256AsBigInteger() }
             assertEquals(value, result)
+        }
+
+        @Test
+        fun `serialize i128 negative one`() {
+            val value = BigInteger.valueOf(-1)
+            val bytes = bcsSerialize { writeI128(value) }
+            assertEquals(16, bytes.size)
+            // All 0xFF bytes for -1 in two's complement
+            assertTrue(bytes.all { it == 0xFF.toByte() })
+
+            val result = bcsDeserialize(bytes) { readI128AsBigInteger() }
+            assertEquals(value, result)
+        }
+
+        @Test
+        fun `serialize i128 max`() {
+            // 2^127 - 1
+            val value = BigInteger.ONE.shiftLeft(127).subtract(BigInteger.ONE)
+            val bytes = bcsSerialize { writeI128(value) }
+            assertEquals(16, bytes.size)
+
+            val result = bcsDeserialize(bytes) { readI128AsBigInteger() }
+            assertEquals(value, result)
+        }
+
+        @Test
+        fun `serialize i128 min`() {
+            // -2^127
+            val value = BigInteger.ONE.shiftLeft(127).negate()
+            val bytes = bcsSerialize { writeI128(value) }
+            assertEquals(16, bytes.size)
+
+            val result = bcsDeserialize(bytes) { readI128AsBigInteger() }
+            assertEquals(value, result)
+        }
+    }
+
+    // =========================================================================
+    // ULEB128 Tests
+    // =========================================================================
+
+    @Nested
+    inner class Uleb128Tests {
+        @Test
+        fun `encode zero`() {
+            val encoded = Uleb128.encode(0)
+            assertEquals(listOf(0x00.toByte()), encoded.toList())
+        }
+
+        @Test
+        fun `encode 127`() {
+            val encoded = Uleb128.encode(127)
+            assertEquals(listOf(0x7F.toByte()), encoded.toList())
+        }
+
+        @Test
+        fun `encode 128`() {
+            val encoded = Uleb128.encode(128)
+            assertEquals(listOf(0x80.toByte(), 0x01.toByte()), encoded.toList())
+        }
+
+        @Test
+        fun `encode 300`() {
+            val encoded = Uleb128.encode(300)
+            assertEquals(listOf(0xAC.toByte(), 0x02.toByte()), encoded.toList())
+        }
+
+        @Test
+        fun `decode zero`() {
+            val (value, _) = Uleb128.decode(byteArrayOf(0x00))
+            assertEquals(0L, value)
+        }
+
+        @Test
+        fun `decode 128`() {
+            val (value, _) = Uleb128.decode(byteArrayOf(0x80.toByte(), 0x01))
+            assertEquals(128L, value)
+        }
+
+        @Test
+        fun `reject non-canonical encoding`() {
+            assertThrows<BcsError> {
+                Uleb128.decode(byteArrayOf(0x80.toByte(), 0x00))
+            }
+        }
+
+        @Test
+        fun `reject overflow`() {
+            assertThrows<BcsError> {
+                Uleb128.decode(byteArrayOf(
+                    0x80.toByte(), 0x80.toByte(), 0x80.toByte(),
+                    0x80.toByte(), 0x80.toByte(), 0x01.toByte()
+                ))
+            }
+        }
+    }
+
+    // =========================================================================
+    // Vector Tests
+    // =========================================================================
+
+    @Nested
+    inner class VectorTests {
+        @Test
+        fun `serialize empty vector`() {
+            val bytes = bcsSerialize { writeList(emptyList<Int>()) { writeU8(it) } }
+            assertEquals("00", bytes.toHex())
+        }
+
+        @Test
+        fun `serialize u8 vector`() {
+            val bytes = bcsSerialize { writeList(listOf(1, 2, 3)) { writeU8(it) } }
+            assertEquals("03010203", bytes.toHex())
+        }
+
+        @Test
+        fun `serialize u64 vector`() {
+            val bytes = bcsSerialize { writeList(listOf(1L, 2L)) { writeU64(it) } }
+            assertEquals("0201000000000000000200000000000000", bytes.toHex())
+        }
+
+        @Test
+        fun `deserialize u8 vector`() {
+            val result = bcsDeserialize("03010203".hexToBytes()) { readList { readU8() } }
+            assertEquals(listOf(1, 2, 3), result)
+        }
+
+        @Test
+        fun `deserialize nested vector`() {
+            // [[1, 2], [3, 4]]
+            val result = bcsDeserialize("02020102020304".hexToBytes()) {
+                readList { readList { readU8() } }
+            }
+            assertEquals(listOf(listOf(1, 2), listOf(3, 4)), result)
         }
     }
 

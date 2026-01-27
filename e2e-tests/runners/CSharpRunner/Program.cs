@@ -298,7 +298,7 @@ class Program {
     
     static void SerializeBenchValue(BcsSerializer s, string type, object? value) {
         switch (type) {
-            case "bool": s.WriteBool(value is bool b && b); break;
+            case "bool": s.WriteBool(value is bool bv && bv); break;
             case "u8": s.WriteU8((byte)(value is int i ? i : 0)); break;
             case "u16": s.WriteU16((ushort)(value is int ii ? ii : 0)); break;
             case "u32": s.WriteU32((uint)(value is long l ? l : 0)); break;

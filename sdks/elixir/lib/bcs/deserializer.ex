@@ -322,7 +322,14 @@ defmodule Bcs.Deserializer do
   @doc """
   Deserialize a byte array (length-prefixed with ULEB128).
   """
-  @spec read_bytes(binary()) :: {:ok, {binary(), binary()}} | {:error, Error.t()}
+  @spec read_bytes(data_t()) :: {:ok, {binary(), data_t()}} | {:error, Error.t()}
+  def read_bytes(%__MODULE__{} = state) do
+    case read_bytes(state.data) do
+      {:ok, {value, rest}} -> {:ok, {value, %{state | data: rest}}}
+      error -> error
+    end
+  end
+
   def read_bytes(data) do
     with {:ok, {length, rest}} <- read_uleb128(data) do
       if length > @max_sequence_length do
@@ -344,7 +351,14 @@ defmodule Bcs.Deserializer do
   @doc """
   Deserialize a UTF-8 string (length-prefixed with ULEB128).
   """
-  @spec read_string(binary()) :: {:ok, {String.t(), binary()}} | {:error, Error.t()}
+  @spec read_string(data_t()) :: {:ok, {String.t(), data_t()}} | {:error, Error.t()}
+  def read_string(%__MODULE__{} = state) do
+    case read_string(state.data) do
+      {:ok, {value, rest}} -> {:ok, {value, %{state | data: rest}}}
+      error -> error
+    end
+  end
+
   def read_string(data) do
     with {:ok, {bytes, rest}} <- read_bytes(data) do
       if String.valid?(bytes) do

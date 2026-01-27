@@ -104,6 +104,59 @@ class BCSTest < Minitest::Test
     assert_equal [0x00, 0x80], ser.to_bytes
   end
 
+  def test_i32_serialization
+    ser = BCS::Serializer.new
+    ser.write_i32(-1)
+    assert_equal [0xff, 0xff, 0xff, 0xff], ser.to_bytes
+
+    ser.clear.write_i32(2_147_483_647)  # max
+    assert_equal [0xff, 0xff, 0xff, 0x7f], ser.to_bytes
+
+    ser.clear.write_i32(-2_147_483_648)  # min
+    assert_equal [0x00, 0x00, 0x00, 0x80], ser.to_bytes
+  end
+
+  def test_i64_serialization
+    ser = BCS::Serializer.new
+    ser.write_i64(-1)
+    assert_equal [0xff] * 8, ser.to_bytes
+
+    ser.clear.write_i64(9_223_372_036_854_775_807)  # max
+    assert_equal [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f], ser.to_bytes
+
+    ser.clear.write_i64(-9_223_372_036_854_775_808)  # min
+    assert_equal [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80], ser.to_bytes
+  end
+
+  def test_i128_serialization
+    ser = BCS::Serializer.new
+    ser.write_i128(-1)
+    bytes = ser.to_bytes
+    assert_equal 16, bytes.length
+    bytes.each { |b| assert_equal 0xff, b }
+  end
+
+  def test_i32_deserialization
+    des = BCS::Deserializer.new([0xff, 0xff, 0xff, 0xff])
+    assert_equal(-1, des.read_i32)
+
+    des = BCS::Deserializer.new([0x00, 0x00, 0x00, 0x80])
+    assert_equal(-2_147_483_648, des.read_i32)
+  end
+
+  def test_i64_deserialization
+    des = BCS::Deserializer.new([0xff] * 8)
+    assert_equal(-1, des.read_i64)
+
+    des = BCS::Deserializer.new([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80])
+    assert_equal(-9_223_372_036_854_775_808, des.read_i64)
+  end
+
+  def test_i128_deserialization
+    des = BCS::Deserializer.new([0xff] * 16)
+    assert_equal(-1, des.read_i128)
+  end
+
   def test_integer_deserialization
     assert_equal 42, BCS.deserialize_u8([0x2a])
     assert_equal 0x1234, BCS.deserialize_u16([0x34, 0x12])

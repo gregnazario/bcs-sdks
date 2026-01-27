@@ -113,6 +113,10 @@ public final class Uleb128 {
 
             // Check for overflow before adding (5 bytes max for u32)
             if (bytesRead == 5) {
+                // Check for non-canonical encoding (could have been encoded in 4 bytes)
+                if (byteVal == 0) {
+                    throw BcsError.nonCanonicalUleb128();
+                }
                 if (byteVal >= 0x10) {
                     throw BcsError.uleb128Overflow();
                 }

@@ -264,6 +264,28 @@ func TestI8Serialization(t *testing.T) {
 	}
 }
 
+func TestI16Serialization(t *testing.T) {
+	vectors := getTestVectors("primitives", "i16", "valid")
+	for _, tc := range vectors {
+		name := tc["name"].(string)
+		value := int16(tc["value"].(float64))
+		bcsHex := tc["bcs_hex"].(string)
+
+		t.Run("serialize "+name, func(t *testing.T) {
+			ser := NewSerializer()
+			ser.WriteI16(value)
+			assert.Equal(t, bcsHex, bytesToHex(ser.Bytes()))
+		})
+
+		t.Run("deserialize "+name, func(t *testing.T) {
+			des := NewDeserializer(hexToBytes(bcsHex))
+			result, err := des.ReadI16()
+			require.NoError(t, err)
+			assert.Equal(t, value, result)
+		})
+	}
+}
+
 func TestI32Serialization(t *testing.T) {
 	vectors := getTestVectors("primitives", "i32", "valid")
 	for _, tc := range vectors {
@@ -282,6 +304,75 @@ func TestI32Serialization(t *testing.T) {
 			result, err := des.ReadI32()
 			require.NoError(t, err)
 			assert.Equal(t, value, result)
+		})
+	}
+}
+
+func TestI64Serialization(t *testing.T) {
+	vectors := getTestVectors("primitives", "i64", "valid")
+	for _, tc := range vectors {
+		name := tc["name"].(string)
+		valueStr := tc["value"].(string)
+		value, _ := new(big.Int).SetString(valueStr, 10)
+		bcsHex := tc["bcs_hex"].(string)
+
+		t.Run("serialize "+name, func(t *testing.T) {
+			ser := NewSerializer()
+			ser.WriteI64(value.Int64())
+			assert.Equal(t, bcsHex, bytesToHex(ser.Bytes()))
+		})
+
+		t.Run("deserialize "+name, func(t *testing.T) {
+			des := NewDeserializer(hexToBytes(bcsHex))
+			result, err := des.ReadI64()
+			require.NoError(t, err)
+			assert.Equal(t, value.Int64(), result)
+		})
+	}
+}
+
+func TestI128Serialization(t *testing.T) {
+	vectors := getTestVectors("primitives", "i128", "valid")
+	for _, tc := range vectors {
+		name := tc["name"].(string)
+		valueStr := tc["value"].(string)
+		value, _ := new(big.Int).SetString(valueStr, 10)
+		bcsHex := tc["bcs_hex"].(string)
+
+		t.Run("serialize "+name, func(t *testing.T) {
+			ser := NewSerializer()
+			ser.WriteI128(value)
+			assert.Equal(t, bcsHex, bytesToHex(ser.Bytes()))
+		})
+
+		t.Run("deserialize "+name, func(t *testing.T) {
+			des := NewDeserializer(hexToBytes(bcsHex))
+			result, err := des.ReadI128()
+			require.NoError(t, err)
+			assert.Equal(t, 0, value.Cmp(result))
+		})
+	}
+}
+
+func TestI256Serialization(t *testing.T) {
+	vectors := getTestVectors("primitives", "i256", "valid")
+	for _, tc := range vectors {
+		name := tc["name"].(string)
+		valueStr := tc["value"].(string)
+		value, _ := new(big.Int).SetString(valueStr, 10)
+		bcsHex := tc["bcs_hex"].(string)
+
+		t.Run("serialize "+name, func(t *testing.T) {
+			ser := NewSerializer()
+			ser.WriteI256(value)
+			assert.Equal(t, bcsHex, bytesToHex(ser.Bytes()))
+		})
+
+		t.Run("deserialize "+name, func(t *testing.T) {
+			des := NewDeserializer(hexToBytes(bcsHex))
+			result, err := des.ReadI256()
+			require.NoError(t, err)
+			assert.Equal(t, 0, value.Cmp(result))
 		})
 	}
 }

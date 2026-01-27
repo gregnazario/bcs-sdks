@@ -259,23 +259,8 @@ defmodule Bcs.Serializer do
     raise ArgumentError, "ULEB128 value exceeds u32 max: #{value}"
   end
 
-  # Inline ULEB128 encoding for performance - optimized for common small values
-  @spec encode_uleb128(non_neg_integer()) :: binary()
-  defp encode_uleb128(value) when value < 0x80, do: <<value>>
-  defp encode_uleb128(value) when value < 0x4000, do: <<(value &&& 0x7F) ||| 0x80, value >>> 7>>
-
-  defp encode_uleb128(value) when value < 0x200000,
-    do: <<(value &&& 0x7F) ||| 0x80, ((value >>> 7) &&& 0x7F) ||| 0x80, value >>> 14>>
-
-  defp encode_uleb128(value) when value < 0x10000000,
-    do:
-      <<(value &&& 0x7F) ||| 0x80, ((value >>> 7) &&& 0x7F) ||| 0x80,
-        ((value >>> 14) &&& 0x7F) ||| 0x80, value >>> 21>>
-
-  defp encode_uleb128(value),
-    do:
-      <<(value &&& 0x7F) ||| 0x80, ((value >>> 7) &&& 0x7F) ||| 0x80,
-        ((value >>> 14) &&& 0x7F) ||| 0x80, ((value >>> 21) &&& 0x7F) ||| 0x80, value >>> 28>>
+  # Delegate to Uleb128 module for encoding
+  defp encode_uleb128(value), do: Bcs.Uleb128.encode(value)
 
   # ==========================================================================
   # BYTES AND STRINGS

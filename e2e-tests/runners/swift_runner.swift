@@ -563,13 +563,13 @@ func runBenchmarks(_ data: Data) -> BenchmarkOutput {
             // Serialize to get bytes
             var ser = BcsSerializer()
             serializeBenchValue(&ser, bc.type, value)
-            let bcsBytes = ser.getBytes()
+            let bcsBytes = ser.toBytes()
             
             // Warmup serialize
             for _ in 0..<warmup {
                 var ws = BcsSerializer()
                 serializeBenchValue(&ws, bc.type, value)
-                _ = ws.getBytes()
+                _ = ws.toBytes()
             }
             
             // Benchmark serialize
@@ -578,13 +578,13 @@ func runBenchmarks(_ data: Data) -> BenchmarkOutput {
                 let start = DispatchTime.now().uptimeNanoseconds
                 var bs = BcsSerializer()
                 serializeBenchValue(&bs, bc.type, value)
-                _ = bs.getBytes()
+                _ = bs.toBytes()
                 serTimes.append(DispatchTime.now().uptimeNanoseconds - start)
             }
             
             // Warmup deserialize
             for _ in 0..<warmup {
-                var wd = BcsDeserializer(data: bcsBytes)
+                var wd = BcsDeserializer(bcsBytes)
                 deserializeBenchValue(&wd, bc.type)
             }
             
@@ -592,7 +592,7 @@ func runBenchmarks(_ data: Data) -> BenchmarkOutput {
             var deTimes: [UInt64] = []
             for _ in 0..<iterations {
                 let start = DispatchTime.now().uptimeNanoseconds
-                var bd = BcsDeserializer(data: bcsBytes)
+                var bd = BcsDeserializer(bcsBytes)
                 deserializeBenchValue(&bd, bc.type)
                 deTimes.append(DispatchTime.now().uptimeNanoseconds - start)
             }

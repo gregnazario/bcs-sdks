@@ -45,6 +45,8 @@ runners/*.o
 # Java artifacts
 runners/*.class
 runners/java_runner.class
+runners/java_runner/build/
+runners/java_runner/.gradle/
 
 # Kotlin artifacts
 runners/kotlin_runner/build/

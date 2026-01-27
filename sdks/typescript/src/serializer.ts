@@ -403,8 +403,9 @@ export class BcsSerializer {
     // Write length and sorted entries
     this.writeUleb128(keyBytesEntries.length);
     for (const { keyBytes, value } of keyBytesEntries) {
+      this.ensureCapacity(keyBytes.length);
       for (const byte of keyBytes) {
-        this.buffer.push(byte);
+        this.buffer[this.size++] = byte;
       }
       valueSerializer(this, value);
     }

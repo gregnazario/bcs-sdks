@@ -213,6 +213,49 @@ TEST_CASE("i16 serialization (two's complement, little-endian)") {
     CHECK(ser.to_bytes() == std::vector<uint8_t>{0x00, 0x80});
 }
 
+TEST_CASE("i32 serialization (two's complement, little-endian)") {
+    bcs::Serializer ser;
+    ser.write_i32(-1);
+    CHECK(ser.to_bytes() == std::vector<uint8_t>{0xff, 0xff, 0xff, 0xff});
+
+    ser.clear();
+    ser.write_i32(2147483647);  // max
+    CHECK(ser.to_bytes() == std::vector<uint8_t>{0xff, 0xff, 0xff, 0x7f});
+
+    ser.clear();
+    ser.write_i32(-2147483648);  // min
+    CHECK(ser.to_bytes() == std::vector<uint8_t>{0x00, 0x00, 0x00, 0x80});
+}
+
+TEST_CASE("i64 serialization (two's complement, little-endian)") {
+    bcs::Serializer ser;
+    ser.write_i64(-1);
+    CHECK(ser.to_bytes() == std::vector<uint8_t>{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff});
+
+    ser.clear();
+    ser.write_i64(INT64_MAX);  // max
+    CHECK(ser.to_bytes() == std::vector<uint8_t>{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f});
+
+    ser.clear();
+    ser.write_i64(INT64_MIN);  // min
+    CHECK(ser.to_bytes() == std::vector<uint8_t>{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80});
+}
+
+TEST_CASE("i128 serialization (two's complement, little-endian)") {
+    // -1 in two's complement (all 0xff)
+    bcs::i128 neg_one;
+    for (auto& b : neg_one) b = 0xff;
+
+    bcs::Serializer ser;
+    ser.write_i128(neg_one);
+    auto bytes = ser.to_bytes();
+
+    CHECK(bytes.size() == 16);
+    for (auto b : bytes) {
+        CHECK(b == 0xff);
+    }
+}
+
 TEST_CASE("Integer deserialization") {
     SUBCASE("u8") {
         std::vector<uint8_t> data{0x2a};
@@ -245,6 +288,39 @@ TEST_CASE("Integer deserialization") {
         std::vector<uint8_t> data{0x00, 0x80};
         bcs::Deserializer des(data);
         CHECK(des.read_i16() == -32768);
+    }
+
+    SUBCASE("i32 negative") {
+        std::vector<uint8_t> data{0xff, 0xff, 0xff, 0xff};
+        bcs::Deserializer des(data);
+        CHECK(des.read_i32() == -1);
+    }
+
+    SUBCASE("i32 min") {
+        std::vector<uint8_t> data{0x00, 0x00, 0x00, 0x80};
+        bcs::Deserializer des(data);
+        CHECK(des.read_i32() == -2147483648);
+    }
+
+    SUBCASE("i64 negative") {
+        std::vector<uint8_t> data{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+        bcs::Deserializer des(data);
+        CHECK(des.read_i64() == -1);
+    }
+
+    SUBCASE("i64 min") {
+        std::vector<uint8_t> data{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80};
+        bcs::Deserializer des(data);
+        CHECK(des.read_i64() == INT64_MIN);
+    }
+
+    SUBCASE("i128 negative") {
+        std::vector<uint8_t> data(16, 0xff);
+        bcs::Deserializer des(data);
+        auto result = des.read_i128();
+        for (auto b : result) {
+            CHECK(b == 0xff);
+        }
     }
 }
 

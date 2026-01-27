@@ -219,6 +219,74 @@ TEST(i16_serialize) {
     ASSERT_EQ(buf[1], 0x80);
 }
 
+TEST(i32_serialize) {
+    bcs_serializer_t ser;
+    uint8_t buf[16];
+    ASSERT_OK(bcs_serializer_init(&ser, buf, sizeof(buf)));
+    ASSERT_OK(bcs_write_i32(&ser, -1));
+    ASSERT_EQ(bcs_serializer_size(&ser), 4);
+    ASSERT_EQ(buf[0], 0xff);
+    ASSERT_EQ(buf[1], 0xff);
+    ASSERT_EQ(buf[2], 0xff);
+    ASSERT_EQ(buf[3], 0xff);
+
+    bcs_serializer_t ser2;
+    uint8_t buf2[16];
+    ASSERT_OK(bcs_serializer_init(&ser2, buf2, sizeof(buf2)));
+    ASSERT_OK(bcs_write_i32(&ser2, -2147483648));
+    ASSERT_EQ(buf2[0], 0x00);
+    ASSERT_EQ(buf2[1], 0x00);
+    ASSERT_EQ(buf2[2], 0x00);
+    ASSERT_EQ(buf2[3], 0x80);
+}
+
+TEST(i64_serialize) {
+    bcs_serializer_t ser;
+    uint8_t buf[16];
+    ASSERT_OK(bcs_serializer_init(&ser, buf, sizeof(buf)));
+    ASSERT_OK(bcs_write_i64(&ser, -1));
+    ASSERT_EQ(bcs_serializer_size(&ser), 8);
+    for (int i = 0; i < 8; i++) {
+        ASSERT_EQ(buf[i], 0xff);
+    }
+
+    bcs_serializer_t ser2;
+    uint8_t buf2[16];
+    ASSERT_OK(bcs_serializer_init(&ser2, buf2, sizeof(buf2)));
+    ASSERT_OK(bcs_write_i64(&ser2, INT64_MIN));
+    ASSERT_EQ(buf2[0], 0x00);
+    ASSERT_EQ(buf2[7], 0x80);
+}
+
+TEST(u128_serialize) {
+    bcs_serializer_t ser;
+    uint8_t buf[32];
+    ASSERT_OK(bcs_serializer_init(&ser, buf, sizeof(buf)));
+
+    uint8_t value[16] = {0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    ASSERT_OK(bcs_write_u128(&ser, value));
+    ASSERT_EQ(bcs_serializer_size(&ser), 16);
+    ASSERT_EQ(buf[0], 0x01);
+    for (int i = 1; i < 16; i++) {
+        ASSERT_EQ(buf[i], 0x00);
+    }
+}
+
+TEST(i128_serialize) {
+    bcs_serializer_t ser;
+    uint8_t buf[32];
+    ASSERT_OK(bcs_serializer_init(&ser, buf, sizeof(buf)));
+
+    // -1 in two's complement: all 0xff
+    uint8_t neg_one[16];
+    memset(neg_one, 0xff, 16);
+    ASSERT_OK(bcs_write_i128(&ser, neg_one));
+    ASSERT_EQ(bcs_serializer_size(&ser), 16);
+    for (int i = 0; i < 16; i++) {
+        ASSERT_EQ(buf[i], 0xff);
+    }
+}
+
 TEST(integer_deserialize) {
     uint8_t data[] = {0x2a, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12};
     bcs_deserializer_t des;
@@ -249,6 +317,64 @@ TEST(signed_integer_deserialize) {
     int16_t i16;
     ASSERT_OK(bcs_read_i16(&des, &i16));
     ASSERT_EQ(i16, -32768);
+}
+
+TEST(i32_deserialize) {
+    uint8_t data1[] = {0xff, 0xff, 0xff, 0xff};
+    bcs_deserializer_t des1;
+    ASSERT_OK(bcs_deserializer_init(&des1, data1, sizeof(data1)));
+    int32_t val1;
+    ASSERT_OK(bcs_read_i32(&des1, &val1));
+    ASSERT_EQ(val1, -1);
+
+    uint8_t data2[] = {0x00, 0x00, 0x00, 0x80};
+    bcs_deserializer_t des2;
+    ASSERT_OK(bcs_deserializer_init(&des2, data2, sizeof(data2)));
+    int32_t val2;
+    ASSERT_OK(bcs_read_i32(&des2, &val2));
+    ASSERT_EQ(val2, -2147483648);
+}
+
+TEST(i64_deserialize) {
+    uint8_t data1[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    bcs_deserializer_t des1;
+    ASSERT_OK(bcs_deserializer_init(&des1, data1, sizeof(data1)));
+    int64_t val1;
+    ASSERT_OK(bcs_read_i64(&des1, &val1));
+    ASSERT_EQ(val1, -1);
+
+    uint8_t data2[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80};
+    bcs_deserializer_t des2;
+    ASSERT_OK(bcs_deserializer_init(&des2, data2, sizeof(data2)));
+    int64_t val2;
+    ASSERT_OK(bcs_read_i64(&des2, &val2));
+    ASSERT_EQ(val2, INT64_MIN);
+}
+
+TEST(u128_deserialize) {
+    uint8_t data[16] = {0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    bcs_deserializer_t des;
+    ASSERT_OK(bcs_deserializer_init(&des, data, sizeof(data)));
+
+    uint8_t value[16];
+    ASSERT_OK(bcs_read_u128(&des, value));
+    ASSERT_EQ(value[0], 0x01);
+    for (int i = 1; i < 16; i++) {
+        ASSERT_EQ(value[i], 0x00);
+    }
+}
+
+TEST(i128_deserialize) {
+    uint8_t data[16];
+    memset(data, 0xff, 16);
+    bcs_deserializer_t des;
+    ASSERT_OK(bcs_deserializer_init(&des, data, sizeof(data)));
+
+    uint8_t value[16];
+    ASSERT_OK(bcs_read_i128(&des, value));
+    for (int i = 0; i < 16; i++) {
+        ASSERT_EQ(value[i], 0xff);
+    }
 }
 
 /* ============================================================================
@@ -587,8 +713,16 @@ int main(void) {
     RUN_TEST(u64_serialize);
     RUN_TEST(i8_serialize);
     RUN_TEST(i16_serialize);
+    RUN_TEST(i32_serialize);
+    RUN_TEST(i64_serialize);
+    RUN_TEST(u128_serialize);
+    RUN_TEST(i128_serialize);
     RUN_TEST(integer_deserialize);
     RUN_TEST(signed_integer_deserialize);
+    RUN_TEST(i32_deserialize);
+    RUN_TEST(i64_deserialize);
+    RUN_TEST(u128_deserialize);
+    RUN_TEST(i128_deserialize);
 
     printf("\nString tests:\n");
     RUN_TEST(string_serialize_empty);

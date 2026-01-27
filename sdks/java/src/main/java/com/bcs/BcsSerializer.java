@@ -289,7 +289,7 @@ public class BcsSerializer {
     public BcsSerializer writeUleb128(long value) {
         // Inline ULEB128 encoding for better performance (avoids array allocation)
         if (value < 0 || value > Uleb128.MAX_U32) {
-            throw new IllegalArgumentException("ULEB128 value out of range: " + value);
+            throw BcsError.valueOutOfRange("uleb128", value);
         }
 
         // Fast path for small values (very common - vector lengths, etc.)
@@ -336,10 +336,14 @@ public class BcsSerializer {
     /**
      * Serialize a UTF-8 string (length-prefixed with ULEB128).
      *
-     * @param value the string to serialize
+     * @param value the string to serialize (must not be null)
      * @return this serializer for chaining
+     * @throws NullPointerException if value is null
      */
     public BcsSerializer writeString(String value) {
+        if (value == null) {
+            throw new NullPointerException("String value cannot be null");
+        }
         byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
         return writeBytes(bytes);
     }

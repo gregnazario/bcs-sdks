@@ -615,7 +615,7 @@ static void deserialize_bench_value(BcsDeserializer *d, const char *type) {
     else if (strcmp(type, "u16") == 0) { uint16_t v; des_read_u16(d, &v); }
     else if (strcmp(type, "u32") == 0) { uint32_t v; des_read_u32(d, &v); }
     else if (strcmp(type, "u64") == 0) { uint64_t v; des_read_u64(d, &v); }
-    else if (strcmp(type, "string") == 0) { char *v = des_read_string(d); free(v); }
+    else if (strcmp(type, "string") == 0) { char *v = NULL; des_read_string(d, &v); free(v); }
     else if (strstr(type, "vector<u8>") || strcmp(type, "bytes") == 0) {
         uint32_t len; des_read_uleb128(d, &len);
         for (uint32_t i = 0; i < len; i++) { uint8_t v; des_read_u8(d, &v); }

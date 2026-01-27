@@ -108,12 +108,18 @@ defmodule Bcs.Uleb128 do
   end
 
   def decode(<<b0, b1, b2, b3, b4, rest::binary>>)
-      when b0 >= 0x80 and b1 >= 0x80 and b2 >= 0x80 and b3 >= 0x80 and b4 < 0x10 do
+      when b0 >= 0x80 and b1 >= 0x80 and b2 >= 0x80 and b3 >= 0x80 and b4 > 0 and b4 < 0x10 do
     value =
       (b0 &&& 0x7F) ||| ((b1 &&& 0x7F) <<< 7) ||| ((b2 &&& 0x7F) <<< 14) |||
         ((b3 &&& 0x7F) <<< 21) ||| (b4 <<< 28)
 
     if value > @max_u32, do: {:error, Error.uleb128_overflow()}, else: {:ok, {value, rest}}
+  end
+
+  # 5-byte with b4 == 0 is non-canonical (could be encoded in 4 bytes)
+  def decode(<<b0, b1, b2, b3, 0, _rest::binary>>)
+      when b0 >= 0x80 and b1 >= 0x80 and b2 >= 0x80 and b3 >= 0x80 do
+    {:error, Error.non_canonical_uleb128()}
   end
 
   # 5th byte with continuation bit or too large

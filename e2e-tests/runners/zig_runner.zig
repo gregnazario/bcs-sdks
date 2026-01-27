@@ -299,15 +299,12 @@ pub fn main() !void {
 
     // Handle benchmark mode
     if (benchmark_mode) {
-        // Read stdin for benchmark spec
-        var input_list: std.ArrayListUnmanaged(u8) = .empty;
-        defer input_list.deinit(allocator);
+        // Read stdin for benchmark spec (consume it)
         var buf: [4096]u8 = undefined;
         const stdin_file = std.fs.File.stdin();
         while (true) {
             const bytes_read = stdin_file.read(&buf) catch break;
             if (bytes_read == 0) break;
-            try input_list.appendSlice(allocator, buf[0..bytes_read]);
         }
         
         try stdout_file.writeAll("{\n");
@@ -315,199 +312,689 @@ pub fn main() !void {
         try stdout_file.writeAll("  \"description\": \"Zig benchmark results\",\n");
         try stdout_file.writeAll("  \"benchmarks\": [\n");
         
-        // Simple benchmark implementation for basic types
         const iterations: u32 = 1000;
         const warmup: u32 = 10;
         var first_result = true;
         
+        // Helper to output benchmark result
+        const outputResult = struct {
+            fn call(file: std.fs.File, name: []const u8, typ: []const u8, iters: u32, ser_stats: [3]i64, de_stats: [3]i64, first: *bool) !void {
+                const ser_avg = @as(f64, @floatFromInt(ser_stats[0])) / @as(f64, @floatFromInt(iters));
+                const de_avg = @as(f64, @floatFromInt(de_stats[0])) / @as(f64, @floatFromInt(iters));
+                if (!first.*) try file.writeAll(",\n");
+                first.* = false;
+                var out_buf: [1024]u8 = undefined;
+                const out = std.fmt.bufPrint(&out_buf, "    {{\"name\": \"{s}\", \"type\": \"{s}\", \"iterations\": {d}, \"serialize_avg_ns\": {d:.2}, \"serialize_min_ns\": {d}, \"serialize_max_ns\": {d}, \"serialize_p50_ns\": {d:.2}, \"serialize_p95_ns\": {d:.2}, \"deserialize_avg_ns\": {d:.2}, \"deserialize_min_ns\": {d}, \"deserialize_max_ns\": {d}, \"deserialize_p50_ns\": {d:.2}, \"deserialize_p95_ns\": {d:.2}, \"throughput_serialize_ops_sec\": {d:.2}, \"throughput_deserialize_ops_sec\": {d:.2}}}", .{ name, typ, iters, ser_avg, ser_stats[1], ser_stats[2], ser_avg, ser_avg, de_avg, de_stats[1], de_stats[2], de_avg, de_avg, if (ser_avg > 0) 1e9 / ser_avg else 0, if (de_avg > 0) 1e9 / de_avg else 0 }) catch "";
+                try file.writeAll(out);
+            }
+        }.call;
+        
         // Benchmark u8
         {
-            // Warmup serialize
             var wi: u32 = 0;
-            while (wi < warmup) : (wi += 1) {
-                var ws = BcsSerializer.init(allocator);
-                defer ws.deinit();
-                try ws.writeU8(255);
-                _ = ws.toSlice();
-            }
-            
-            // Benchmark serialize
-            var ser_sum: i64 = 0;
-            var ser_min: i64 = std.math.maxInt(i64);
-            var ser_max: i64 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeU8(255); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
             var i: u32 = 0;
             while (i < iterations) : (i += 1) {
                 const start = std.time.nanoTimestamp();
-                var bs = BcsSerializer.init(allocator);
-                defer bs.deinit();
-                try bs.writeU8(255);
-                _ = bs.toSlice();
-                const elapsed = std.time.nanoTimestamp() - start;
-                ser_sum += elapsed;
-                if (elapsed < ser_min) ser_min = elapsed;
-                if (elapsed > ser_max) ser_max = elapsed;
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeU8(255); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
             }
-            
-            // Serialize to get bytes for deserialize benchmark
-            var ser = BcsSerializer.init(allocator);
-            defer ser.deinit();
-            try ser.writeU8(255);
-            const bcs_bytes = ser.toSlice();
-            
-            // Warmup deserialize
-            wi = 0;
-            while (wi < warmup) : (wi += 1) {
-                var wd = BcsDeserializer.init(@constCast(bcs_bytes));
-                _ = wd.readU8() catch continue;
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeU8(255); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = wd.readU8() catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = bd.readU8() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
             }
-            
-            // Benchmark deserialize
-            var de_sum: i64 = 0;
-            var de_min: i64 = std.math.maxInt(i64);
-            var de_max: i64 = 0;
-            i = 0;
+            try outputResult(stdout_file, "u8", "u8", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark u16
+        {
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeU16(65535); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
             while (i < iterations) : (i += 1) {
                 const start = std.time.nanoTimestamp();
-                var bd = BcsDeserializer.init(@constCast(bcs_bytes));
-                _ = bd.readU8() catch continue;
-                const elapsed = std.time.nanoTimestamp() - start;
-                de_sum += elapsed;
-                if (elapsed < de_min) de_min = elapsed;
-                if (elapsed > de_max) de_max = elapsed;
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeU16(65535); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
             }
-            
-            const ser_avg = @as(f64, @floatFromInt(ser_sum)) / @as(f64, @floatFromInt(iterations));
-            const de_avg = @as(f64, @floatFromInt(de_sum)) / @as(f64, @floatFromInt(iterations));
-            
-            if (!first_result) try stdout_file.writeAll(",\n");
-            first_result = false;
-            
-            var out_buf: [1024]u8 = undefined;
-            const out = std.fmt.bufPrint(&out_buf, "    {{\"name\": \"u8\", \"type\": \"u8\", \"iterations\": {d}, \"serialize_avg_ns\": {d:.2}, \"serialize_min_ns\": {d}, \"serialize_max_ns\": {d}, \"serialize_p50_ns\": {d:.2}, \"serialize_p95_ns\": {d:.2}, \"deserialize_avg_ns\": {d:.2}, \"deserialize_min_ns\": {d}, \"deserialize_max_ns\": {d}, \"deserialize_p50_ns\": {d:.2}, \"deserialize_p95_ns\": {d:.2}, \"throughput_serialize_ops_sec\": {d:.2}, \"throughput_deserialize_ops_sec\": {d:.2}}}", .{ iterations, ser_avg, ser_min, ser_max, ser_avg, ser_avg, de_avg, de_min, de_max, de_avg, de_avg, if (ser_avg > 0) 1e9 / ser_avg else 0, if (de_avg > 0) 1e9 / de_avg else 0 }) catch "";
-            try stdout_file.writeAll(out);
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeU16(65535); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = wd.readU16() catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = bd.readU16() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "u16", "u16", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark u32
+        {
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeU32(0xFFFFFFFF); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeU32(0xFFFFFFFF); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeU32(0xFFFFFFFF); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = wd.readU32() catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = bd.readU32() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "u32", "u32", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
         }
         
         // Benchmark u64
         {
             var wi: u32 = 0;
-            while (wi < warmup) : (wi += 1) {
-                var ws = BcsSerializer.init(allocator);
-                defer ws.deinit();
-                try ws.writeU64(0xFFFFFFFFFFFFFFFF);
-                _ = ws.toSlice();
-            }
-            
-            var ser_sum: i64 = 0;
-            var ser_min: i64 = std.math.maxInt(i64);
-            var ser_max: i64 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeU64(0xFFFFFFFFFFFFFFFF); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
             var i: u32 = 0;
             while (i < iterations) : (i += 1) {
                 const start = std.time.nanoTimestamp();
-                var bs = BcsSerializer.init(allocator);
-                defer bs.deinit();
-                try bs.writeU64(0xFFFFFFFFFFFFFFFF);
-                _ = bs.toSlice();
-                const elapsed = std.time.nanoTimestamp() - start;
-                ser_sum += elapsed;
-                if (elapsed < ser_min) ser_min = elapsed;
-                if (elapsed > ser_max) ser_max = elapsed;
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeU64(0xFFFFFFFFFFFFFFFF); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
             }
-            
-            var ser = BcsSerializer.init(allocator);
-            defer ser.deinit();
-            try ser.writeU64(0xFFFFFFFFFFFFFFFF);
-            const bcs_bytes = ser.toSlice();
-            
-            wi = 0;
-            while (wi < warmup) : (wi += 1) {
-                var wd = BcsDeserializer.init(@constCast(bcs_bytes));
-                _ = wd.readU64() catch continue;
-            }
-            
-            var de_sum: i64 = 0;
-            var de_min: i64 = std.math.maxInt(i64);
-            var de_max: i64 = 0;
-            i = 0;
-            while (i < iterations) : (i += 1) {
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeU64(0xFFFFFFFFFFFFFFFF); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = wd.readU64() catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
                 const start = std.time.nanoTimestamp();
-                var bd = BcsDeserializer.init(@constCast(bcs_bytes));
-                _ = bd.readU64() catch continue;
-                const elapsed = std.time.nanoTimestamp() - start;
-                de_sum += elapsed;
-                if (elapsed < de_min) de_min = elapsed;
-                if (elapsed > de_max) de_max = elapsed;
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = bd.readU64() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
             }
-            
-            const ser_avg = @as(f64, @floatFromInt(ser_sum)) / @as(f64, @floatFromInt(iterations));
-            const de_avg = @as(f64, @floatFromInt(de_sum)) / @as(f64, @floatFromInt(iterations));
-            
-            try stdout_file.writeAll(",\n");
-            var out_buf: [1024]u8 = undefined;
-            const out = std.fmt.bufPrint(&out_buf, "    {{\"name\": \"u64\", \"type\": \"u64\", \"iterations\": {d}, \"serialize_avg_ns\": {d:.2}, \"serialize_min_ns\": {d}, \"serialize_max_ns\": {d}, \"serialize_p50_ns\": {d:.2}, \"serialize_p95_ns\": {d:.2}, \"deserialize_avg_ns\": {d:.2}, \"deserialize_min_ns\": {d}, \"deserialize_max_ns\": {d}, \"deserialize_p50_ns\": {d:.2}, \"deserialize_p95_ns\": {d:.2}, \"throughput_serialize_ops_sec\": {d:.2}, \"throughput_deserialize_ops_sec\": {d:.2}}}", .{ iterations, ser_avg, ser_min, ser_max, ser_avg, ser_avg, de_avg, de_min, de_max, de_avg, de_avg, if (ser_avg > 0) 1e9 / ser_avg else 0, if (de_avg > 0) 1e9 / de_avg else 0 }) catch "";
-            try stdout_file.writeAll(out);
+            try outputResult(stdout_file, "u64", "u64", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
         }
         
-        // Benchmark string
+        // Benchmark u128
         {
-            const test_str = "hello world test string";
+            const val_bytes = [_]u8{0xFF} ** 16;  // Max u128 as bytes
             var wi: u32 = 0;
-            while (wi < warmup) : (wi += 1) {
-                var ws = BcsSerializer.init(allocator);
-                defer ws.deinit();
-                try ws.writeString(test_str);
-                _ = ws.toSlice();
-            }
-            
-            var ser_sum: i64 = 0;
-            var ser_min: i64 = std.math.maxInt(i64);
-            var ser_max: i64 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeU128(&val_bytes); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
             var i: u32 = 0;
             while (i < iterations) : (i += 1) {
                 const start = std.time.nanoTimestamp();
-                var bs = BcsSerializer.init(allocator);
-                defer bs.deinit();
-                try bs.writeString(test_str);
-                _ = bs.toSlice();
-                const elapsed = std.time.nanoTimestamp() - start;
-                ser_sum += elapsed;
-                if (elapsed < ser_min) ser_min = elapsed;
-                if (elapsed > ser_max) ser_max = elapsed;
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeU128(&val_bytes); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
             }
-            
-            var ser = BcsSerializer.init(allocator);
-            defer ser.deinit();
-            try ser.writeString(test_str);
-            const bcs_bytes = ser.toSlice();
-            
-            wi = 0;
-            while (wi < warmup) : (wi += 1) {
-                var wd = BcsDeserializer.init(@constCast(bcs_bytes));
-                const s = wd.readString(allocator) catch continue;
-                allocator.free(s);
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeU128(&val_bytes); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); var warm_buf1: [16]u8 = undefined; wd.readU128(&warm_buf1) catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); var read_buf1: [16]u8 = undefined; bd.readU128(&read_buf1) catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
             }
-            
-            var de_sum: i64 = 0;
-            var de_min: i64 = std.math.maxInt(i64);
-            var de_max: i64 = 0;
-            i = 0;
+            try outputResult(stdout_file, "u128", "u128", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark i8
+        {
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeI8(-128); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
             while (i < iterations) : (i += 1) {
                 const start = std.time.nanoTimestamp();
-                var bd = BcsDeserializer.init(@constCast(bcs_bytes));
-                const s = bd.readString(allocator) catch continue;
-                defer allocator.free(s);
-                const elapsed = std.time.nanoTimestamp() - start;
-                de_sum += elapsed;
-                if (elapsed < de_min) de_min = elapsed;
-                if (elapsed > de_max) de_max = elapsed;
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeI8(-128); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
             }
-            
-            const ser_avg = @as(f64, @floatFromInt(ser_sum)) / @as(f64, @floatFromInt(iterations));
-            const de_avg = @as(f64, @floatFromInt(de_sum)) / @as(f64, @floatFromInt(iterations));
-            
-            try stdout_file.writeAll(",\n");
-            var out_buf: [1024]u8 = undefined;
-            const out = std.fmt.bufPrint(&out_buf, "    {{\"name\": \"string_short\", \"type\": \"string\", \"iterations\": {d}, \"serialize_avg_ns\": {d:.2}, \"serialize_min_ns\": {d}, \"serialize_max_ns\": {d}, \"serialize_p50_ns\": {d:.2}, \"serialize_p95_ns\": {d:.2}, \"deserialize_avg_ns\": {d:.2}, \"deserialize_min_ns\": {d}, \"deserialize_max_ns\": {d}, \"deserialize_p50_ns\": {d:.2}, \"deserialize_p95_ns\": {d:.2}, \"throughput_serialize_ops_sec\": {d:.2}, \"throughput_deserialize_ops_sec\": {d:.2}}}", .{ iterations, ser_avg, ser_min, ser_max, ser_avg, ser_avg, de_avg, de_min, de_max, de_avg, de_avg, if (ser_avg > 0) 1e9 / ser_avg else 0, if (de_avg > 0) 1e9 / de_avg else 0 }) catch "";
-            try stdout_file.writeAll(out);
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeI8(-128); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = wd.readI8() catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = bd.readI8() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "i8", "i8", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark i16
+        {
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeI16(-32768); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeI16(-32768); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeI16(-32768); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = wd.readI16() catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = bd.readI16() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "i16", "i16", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark i32
+        {
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeI32(-2147483648); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeI32(-2147483648); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeI32(-2147483648); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = wd.readI32() catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = bd.readI32() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "i32", "i32", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark i64
+        {
+            const val: i64 = -9223372036854775808;
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeI64(val); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeI64(val); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeI64(val); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = wd.readI64() catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = bd.readI64() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "i64", "i64", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark i128 (uses same byte representation as u128)
+        {
+            const val_bytes = [_]u8{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80};  // Min i128 as bytes (little-endian)
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeU128(&val_bytes); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeU128(&val_bytes); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeU128(&val_bytes); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); var warm_buf2: [16]u8 = undefined; wd.readU128(&warm_buf2) catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); var read_buf2: [16]u8 = undefined; bd.readU128(&read_buf2) catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "i128", "i128", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark bool_true
+        {
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeBool(true); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeBool(true); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeBool(true); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = wd.readBool() catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = bd.readBool() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "bool_true", "bool", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark bool_false
+        {
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeBool(false); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeBool(false); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeBool(false); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = wd.readBool() catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); _ = bd.readBool() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "bool_false", "bool", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark string_empty
+        {
+            const test_str = "";
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeString(test_str); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeString(test_str); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeString(test_str); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); const s = wd.readString(allocator) catch continue; allocator.free(s); }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); const s = bd.readString(allocator) catch continue; defer allocator.free(s);
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "string_empty", "string", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark string_short
+        {
+            const test_str = "hello!!!!";
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeString(test_str); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeString(test_str); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeString(test_str); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); const s = wd.readString(allocator) catch continue; allocator.free(s); }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); const s = bd.readString(allocator) catch continue; defer allocator.free(s);
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "string_short", "string", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark string_medium (100 chars)
+        {
+            const test_str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeString(test_str); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeString(test_str); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeString(test_str); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); const s = wd.readString(allocator) catch continue; allocator.free(s); }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); const s = bd.readString(allocator) catch continue; defer allocator.free(s);
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "string_medium", "string", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark bytes_small (10 bytes) - uses same format as string (ULEB128 length + data)
+        {
+            const test_bytes = [_]u8{0,1,2,3,4,5,6,7,8,9};
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) {
+                var ws = BcsSerializer.init(allocator); defer ws.deinit();
+                try ws.writeUleb128(@intCast(test_bytes.len));
+                for (test_bytes) |b| try ws.writeU8(b);
+                _ = ws.toSlice();
+            }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit();
+                try bs.writeUleb128(@intCast(test_bytes.len));
+                for (test_bytes) |b| try bs.writeU8(b);
+                _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit();
+            try ser.writeUleb128(@intCast(test_bytes.len));
+            for (test_bytes) |b| try ser.writeU8(b);
+            const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) {
+                var wd = BcsDeserializer.init(@constCast(bcs_bytes));
+                const len = wd.readUleb128() catch continue;
+                var j: u32 = 0; while (j < len) : (j += 1) _ = wd.readU8() catch continue;
+            }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes));
+                const len = bd.readUleb128() catch continue;
+                var j: u32 = 0; while (j < len) : (j += 1) _ = bd.readU8() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "bytes_small", "bytes", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark bytes_address (32 bytes fixed)
+        {
+            const test_bytes = [_]u8{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1};
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) { var ws = BcsSerializer.init(allocator); defer ws.deinit(); try ws.writeFixedBytes(&test_bytes); _ = ws.toSlice(); }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit(); try bs.writeFixedBytes(&test_bytes); _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit(); try ser.writeFixedBytes(&test_bytes); const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) { var wd = BcsDeserializer.init(@constCast(bcs_bytes)); var fb_buf: [32]u8 = undefined; wd.readFixedBytes(&fb_buf, 32) catch continue; }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes)); var fb_buf2: [32]u8 = undefined; bd.readFixedBytes(&fb_buf2, 32) catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "bytes_address", "fixed_bytes", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark vector_u8_small (10 elements)
+        {
+            const test_vec = [_]u8{0,1,2,3,4,5,6,7,8,9};
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) {
+                var ws = BcsSerializer.init(allocator); defer ws.deinit();
+                try ws.writeUleb128(@intCast(test_vec.len));
+                for (test_vec) |v| try ws.writeU8(v);
+                _ = ws.toSlice();
+            }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit();
+                try bs.writeUleb128(@intCast(test_vec.len));
+                for (test_vec) |v| try bs.writeU8(v);
+                _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit();
+            try ser.writeUleb128(@intCast(test_vec.len));
+            for (test_vec) |v| try ser.writeU8(v);
+            const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) {
+                var wd = BcsDeserializer.init(@constCast(bcs_bytes));
+                const len = wd.readUleb128() catch continue;
+                var j: u32 = 0; while (j < len) : (j += 1) _ = wd.readU8() catch continue;
+            }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes));
+                const len = bd.readUleb128() catch continue;
+                var j: u32 = 0; while (j < len) : (j += 1) _ = bd.readU8() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "vector_u8_small", "vector<u8>", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark vector_u64_small (10 elements)
+        {
+            const test_vec = [_]u64{0,1,2,3,4,5,6,7,8,9};
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) {
+                var ws = BcsSerializer.init(allocator); defer ws.deinit();
+                try ws.writeUleb128(@intCast(test_vec.len));
+                for (test_vec) |v| try ws.writeU64(v);
+                _ = ws.toSlice();
+            }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit();
+                try bs.writeUleb128(@intCast(test_vec.len));
+                for (test_vec) |v| try bs.writeU64(v);
+                _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit();
+            try ser.writeUleb128(@intCast(test_vec.len));
+            for (test_vec) |v| try ser.writeU64(v);
+            const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) {
+                var wd = BcsDeserializer.init(@constCast(bcs_bytes));
+                const len = wd.readUleb128() catch continue;
+                var j: u32 = 0; while (j < len) : (j += 1) _ = wd.readU64() catch continue;
+            }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes));
+                const len = bd.readUleb128() catch continue;
+                var j: u32 = 0; while (j < len) : (j += 1) _ = bd.readU64() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "vector_u64_small", "vector<u64>", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark struct_simple (u8 + u64)
+        {
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) {
+                var ws = BcsSerializer.init(allocator); defer ws.deinit();
+                try ws.writeU8(42);
+                try ws.writeU64(1000000);
+                _ = ws.toSlice();
+            }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit();
+                try bs.writeU8(42);
+                try bs.writeU64(1000000);
+                _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit();
+            try ser.writeU8(42);
+            try ser.writeU64(1000000);
+            const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) {
+                var wd = BcsDeserializer.init(@constCast(bcs_bytes));
+                _ = wd.readU8() catch continue;
+                _ = wd.readU64() catch continue;
+            }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes));
+                _ = bd.readU8() catch continue;
+                _ = bd.readU64() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "struct_simple", "struct", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark struct_with_string
+        {
+            const test_name = "test_item";
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) {
+                var ws = BcsSerializer.init(allocator); defer ws.deinit();
+                try ws.writeString(test_name);
+                try ws.writeU64(999999);
+                _ = ws.toSlice();
+            }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit();
+                try bs.writeString(test_name);
+                try bs.writeU64(999999);
+                _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit();
+            try ser.writeString(test_name);
+            try ser.writeU64(999999);
+            const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) {
+                var wd = BcsDeserializer.init(@constCast(bcs_bytes));
+                const s = wd.readString(allocator) catch continue; allocator.free(s);
+                _ = wd.readU64() catch continue;
+            }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes));
+                const s = bd.readString(allocator) catch continue; defer allocator.free(s);
+                _ = bd.readU64() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "struct_with_string", "struct", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
+        }
+        
+        // Benchmark transfer_transaction (simulated blockchain tx)
+        {
+            const sender = [_]u8{0}**31 ++ [_]u8{1};
+            const recipient = [_]u8{0}**31 ++ [_]u8{2};
+            var wi: u32 = 0;
+            while (wi < warmup) : (wi += 1) {
+                var ws = BcsSerializer.init(allocator); defer ws.deinit();
+                try ws.writeFixedBytes(&sender);
+                try ws.writeFixedBytes(&recipient);
+                try ws.writeU64(100000000);
+                try ws.writeU64(42);
+                try ws.writeU64(100);
+                try ws.writeU64(2000);
+                try ws.writeU64(1700000000);
+                _ = ws.toSlice();
+            }
+            var ser_sum: i64 = 0; var ser_min: i64 = std.math.maxInt(i64); var ser_max: i64 = 0;
+            var i: u32 = 0;
+            while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bs = BcsSerializer.init(allocator); defer bs.deinit();
+                try bs.writeFixedBytes(&sender);
+                try bs.writeFixedBytes(&recipient);
+                try bs.writeU64(100000000);
+                try bs.writeU64(42);
+                try bs.writeU64(100);
+                try bs.writeU64(2000);
+                try bs.writeU64(1700000000);
+                _ = bs.toSlice();
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                ser_sum += elapsed; if (elapsed < ser_min) ser_min = elapsed; if (elapsed > ser_max) ser_max = elapsed;
+            }
+            var ser = BcsSerializer.init(allocator); defer ser.deinit();
+            try ser.writeFixedBytes(&sender);
+            try ser.writeFixedBytes(&recipient);
+            try ser.writeU64(100000000);
+            try ser.writeU64(42);
+            try ser.writeU64(100);
+            try ser.writeU64(2000);
+            try ser.writeU64(1700000000);
+            const bcs_bytes = ser.toSlice();
+            wi = 0; while (wi < warmup) : (wi += 1) {
+                var wd = BcsDeserializer.init(@constCast(bcs_bytes));
+                var tx_buf1: [32]u8 = undefined; wd.readFixedBytes(&tx_buf1, 32) catch continue;
+                var tx_buf2: [32]u8 = undefined; wd.readFixedBytes(&tx_buf2, 32) catch continue;
+                _ = wd.readU64() catch continue;
+                _ = wd.readU64() catch continue;
+                _ = wd.readU64() catch continue;
+                _ = wd.readU64() catch continue;
+                _ = wd.readU64() catch continue;
+            }
+            var de_sum: i64 = 0; var de_min: i64 = std.math.maxInt(i64); var de_max: i64 = 0;
+            i = 0; while (i < iterations) : (i += 1) {
+                const start = std.time.nanoTimestamp();
+                var bd = BcsDeserializer.init(@constCast(bcs_bytes));
+                var tx_buf3: [32]u8 = undefined; bd.readFixedBytes(&tx_buf3, 32) catch continue;
+                var tx_buf4: [32]u8 = undefined; bd.readFixedBytes(&tx_buf4, 32) catch continue;
+                _ = bd.readU64() catch continue;
+                _ = bd.readU64() catch continue;
+                _ = bd.readU64() catch continue;
+                _ = bd.readU64() catch continue;
+                _ = bd.readU64() catch continue;
+                const elapsed: i64 = @intCast(std.time.nanoTimestamp() - start);
+                de_sum += elapsed; if (elapsed < de_min) de_min = elapsed; if (elapsed > de_max) de_max = elapsed;
+            }
+            try outputResult(stdout_file, "transfer_transaction", "struct", iterations, .{ser_sum, ser_min, ser_max}, .{de_sum, de_min, de_max}, &first_result);
         }
         
         try stdout_file.writeAll("\n  ]\n}\n");

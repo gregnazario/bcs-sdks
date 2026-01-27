@@ -310,6 +310,31 @@ public:
         idx++; // skip ]
         return arr;
     }
+    
+    // Parse array of primitives (numbers or strings)
+    std::vector<std::string> parseSimpleArray() {
+        std::vector<std::string> arr;
+        idx++; // skip [
+        skipWhitespace();
+        if (json[idx] != ']') {
+            while (true) {
+                skipWhitespace();
+                if (json[idx] == '"') {
+                    arr.push_back(parseString());
+                } else if (json[idx] == '-' || std::isdigit(json[idx])) {
+                    size_t start = idx;
+                    if (json[idx] == '-') idx++;
+                    while (idx < json.size() && (std::isdigit(json[idx]) || json[idx] == '.' || json[idx] == 'e' || json[idx] == 'E')) idx++;
+                    arr.push_back(json.substr(start, idx - start));
+                }
+                skipWhitespace();
+                if (json[idx] == ']') break;
+                idx++; // skip ,
+            }
+        }
+        idx++; // skip ]
+        return arr;
+    }
 };
 
 std::string processTestCase(const std::map<std::string, std::string>& tc) {
@@ -589,29 +614,28 @@ void serializeBenchValue(BcsSerializer& s, const std::string& type, const std::s
         s.writeString(v);
     } else if (type == "bytes" || type == "vector<u8>") {
         JsonParser p(valueJson);
-        auto arr = p.parseArray();
+        auto arr = p.parseSimpleArray();
         s.writeUleb128(arr.size());
         for (auto& item : arr) s.writeU8(std::stoi(item));
     } else if (type == "fixed_bytes") {
         JsonParser p(valueJson);
-        auto arr = p.parseArray();
+        auto arr = p.parseSimpleArray();
         for (auto& item : arr) s.writeU8(std::stoi(item));
     } else if (type == "vector<u64>") {
         JsonParser p(valueJson);
-        auto arr = p.parseArray();
+        auto arr = p.parseSimpleArray();
         s.writeUleb128(arr.size());
         for (auto& item : arr) {
             std::string v = item;
-            if (v.front() == '"') v = v.substr(1, v.size()-2);
+            if (!v.empty() && v.front() == '"') v = v.substr(1, v.size()-2);
             s.writeU64(std::stoull(v));
         }
     } else if (type == "vector<string>") {
         JsonParser p(valueJson);
-        auto arr = p.parseArray();
+        auto arr = p.parseSimpleArray();
         s.writeUleb128(arr.size());
         for (auto& item : arr) {
-            std::string v = item.substr(1, item.size()-2);
-            s.writeString(v);
+            s.writeString(item);  // parseSimpleArray already strips quotes
         }
     }
 }
@@ -674,10 +698,7 @@ std::string runBenchmarks(const std::string& input) {
             JsonParser benchParser(group["benchmarks"]);
             auto benchmarks = benchParser.parseArray();
             
-            for (auto& bcJson : benchmarks) {
-                JsonParser bcParser(bcJson);
-                auto bc = bcParser.parseObject();
-                
+            for (auto& bc : benchmarks) {
                 std::string name = bc.count("name") ? bc["name"] : "";
                 if (name.front() == '"') name = name.substr(1, name.size()-2);
                 std::string type = bc.count("type") ? bc["type"] : "";

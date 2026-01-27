@@ -120,6 +120,64 @@ final class PrimitiveTypeTests: XCTestCase {
         XCTAssertEqual(ser.toBytes(), [0x00, 0x80])
     }
 
+    func testI32Serialization() {
+        let ser = BcsSerializer()
+        ser.writeI32(-1)
+        XCTAssertEqual(ser.toBytes(), [0xff, 0xff, 0xff, 0xff])
+
+        ser.clear()
+        ser.writeI32(2147483647)  // max
+        XCTAssertEqual(ser.toBytes(), [0xff, 0xff, 0xff, 0x7f])
+
+        ser.clear()
+        ser.writeI32(-2147483648)  // min
+        XCTAssertEqual(ser.toBytes(), [0x00, 0x00, 0x00, 0x80])
+    }
+
+    func testI64Serialization() {
+        let ser = BcsSerializer()
+        ser.writeI64(-1)
+        XCTAssertEqual(ser.toBytes(), [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])
+
+        ser.clear()
+        ser.writeI64(9223372036854775807)  // max
+        XCTAssertEqual(ser.toBytes(), [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f])
+
+        ser.clear()
+        ser.writeI64(Int64.min)  // min
+        XCTAssertEqual(ser.toBytes(), [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80])
+    }
+
+    func testI128Serialization() throws {
+        // -1 in two's complement (all 0xff)
+        let negOne = [UInt8](repeating: 0xff, count: 16)
+        let ser = BcsSerializer()
+        try ser.writeI128(negOne)
+        XCTAssertEqual(ser.toBytes(), negOne)
+    }
+
+    func testI32Deserialization() throws {
+        let des1 = BcsDeserializer([0xff, 0xff, 0xff, 0xff])
+        XCTAssertEqual(try des1.readI32(), -1)
+
+        let des2 = BcsDeserializer([0x00, 0x00, 0x00, 0x80])
+        XCTAssertEqual(try des2.readI32(), -2147483648)
+    }
+
+    func testI64Deserialization() throws {
+        let des1 = BcsDeserializer([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])
+        XCTAssertEqual(try des1.readI64(), -1)
+
+        let des2 = BcsDeserializer([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80])
+        XCTAssertEqual(try des2.readI64(), Int64.min)
+    }
+
+    func testI128Deserialization() throws {
+        let allFf = [UInt8](repeating: 0xff, count: 16)
+        let des = BcsDeserializer(allFf)
+        XCTAssertEqual(try des.readI128(), allFf)
+    }
+
     func testIntegerDeserialization() throws {
         XCTAssertEqual(try BCS.deserializeU8([0x2a]), 42)
         XCTAssertEqual(try BCS.deserializeU16([0x34, 0x12]), 0x1234)

@@ -151,6 +151,49 @@ void main() {
       expect(BcsSerializer().writeI16(-32768).toBytes(), equals([0x00, 0x80]));
     });
 
+    test('i32 serialization', () {
+      expect(
+        BcsSerializer().writeI32(-1).toBytes(),
+        equals([0xff, 0xff, 0xff, 0xff]),
+      );
+      expect(
+        BcsSerializer().writeI32(2147483647).toBytes(),
+        equals([0xff, 0xff, 0xff, 0x7f]),
+      );
+      expect(
+        BcsSerializer().writeI32(-2147483648).toBytes(),
+        equals([0x00, 0x00, 0x00, 0x80]),
+      );
+    });
+
+    test('i64 serialization', () {
+      expect(
+        BcsSerializer().writeI64(BigInt.from(-1)).toBytes(),
+        equals([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]),
+      );
+      expect(
+        BcsSerializer()
+            .writeI64(BigInt.parse('9223372036854775807'))
+            .toBytes(),
+        equals([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f]),
+      );
+      expect(
+        BcsSerializer()
+            .writeI64(BigInt.parse('-9223372036854775808'))
+            .toBytes(),
+        equals([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80]),
+      );
+    });
+
+    test('i128 serialization', () {
+      // -1 in two's complement (all 0xff bytes)
+      final negOne = BcsSerializer().writeI128(BigInt.from(-1)).toBytes();
+      expect(negOne.length, equals(16));
+      for (final b in negOne) {
+        expect(b, equals(0xff));
+      }
+    });
+
     test('integer deserialization', () {
       expect(BcsDeserializer.fromList([0x2a]).readU8(), equals(42));
       expect(BcsDeserializer.fromList([0x34, 0x12]).readU16(), equals(0x1234));
@@ -176,6 +219,40 @@ void main() {
     test('signed integer deserialization', () {
       expect(BcsDeserializer.fromList([0xff]).readI8(), equals(-1));
       expect(BcsDeserializer.fromList([0x00, 0x80]).readI16(), equals(-32768));
+    });
+
+    test('i32 deserialization', () {
+      expect(
+        BcsDeserializer.fromList([0xff, 0xff, 0xff, 0xff]).readI32(),
+        equals(-1),
+      );
+      expect(
+        BcsDeserializer.fromList([0x00, 0x00, 0x00, 0x80]).readI32(),
+        equals(-2147483648),
+      );
+    });
+
+    test('i64 deserialization', () {
+      expect(
+        BcsDeserializer.fromList(
+          [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        ).readI64(),
+        equals(BigInt.from(-1)),
+      );
+      expect(
+        BcsDeserializer.fromList(
+          [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80],
+        ).readI64(),
+        equals(BigInt.parse('-9223372036854775808')),
+      );
+    });
+
+    test('i128 deserialization', () {
+      final allFf = List.filled(16, 0xff);
+      expect(
+        BcsDeserializer.fromList(allFf).readI128(),
+        equals(BigInt.from(-1)),
+      );
     });
   });
 

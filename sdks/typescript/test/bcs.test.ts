@@ -328,6 +328,56 @@ describe("i64 serialization", () => {
   }
 });
 
+describe("i128 serialization", () => {
+  const vectors = getTestVectors(["primitives", "i128", "valid"]);
+
+  it("basic i128 round-trip", () => {
+    const ser = new BcsSerializer();
+    ser.writeI128(-1n);
+    expect(bytesToHex(ser.toBytes())).toBe("ffffffffffffffffffffffffffffffff");
+    const des = new BcsDeserializer(hexToBytes("ffffffffffffffffffffffffffffffff"));
+    expect(des.readI128()).toBe(-1n);
+  });
+
+  for (const tc of vectors) {
+    it(`serialize ${tc.name}`, () => {
+      const ser = new BcsSerializer();
+      ser.writeI128(BigInt(tc.value as string));
+      expect(bytesToHex(ser.toBytes())).toBe(tc.bcs_hex);
+    });
+
+    it(`deserialize ${tc.name}`, () => {
+      const des = new BcsDeserializer(hexToBytes(tc.bcs_hex as string));
+      expect(des.readI128()).toBe(BigInt(tc.value as string));
+    });
+  }
+});
+
+describe("i256 serialization", () => {
+  const vectors = getTestVectors(["primitives", "i256", "valid"]);
+
+  it("basic i256 round-trip", () => {
+    const ser = new BcsSerializer();
+    ser.writeI256(-1n);
+    expect(bytesToHex(ser.toBytes())).toBe("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    const des = new BcsDeserializer(hexToBytes("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
+    expect(des.readI256()).toBe(-1n);
+  });
+
+  for (const tc of vectors) {
+    it(`serialize ${tc.name}`, () => {
+      const ser = new BcsSerializer();
+      ser.writeI256(BigInt(tc.value as string));
+      expect(bytesToHex(ser.toBytes())).toBe(tc.bcs_hex);
+    });
+
+    it(`deserialize ${tc.name}`, () => {
+      const des = new BcsDeserializer(hexToBytes(tc.bcs_hex as string));
+      expect(des.readI256()).toBe(BigInt(tc.value as string));
+    });
+  }
+});
+
 // ==========================================================================
 // ULEB128 TESTS
 // ==========================================================================
@@ -450,6 +500,90 @@ describe("vector serialization", () => {
   it("reject vector with length exceeding data", () => {
     const des = new BcsDeserializer(hexToBytes("05010203"));
     expect(() => des.readVector((d) => d.readU8())).toThrow(BcsError);
+  });
+});
+
+// ==========================================================================
+// MAP TESTS
+// ==========================================================================
+
+describe("map serialization", () => {
+  it("serialize empty map", () => {
+    const ser = new BcsSerializer();
+    ser.writeMap(
+      new Map(),
+      (s, k: number) => s.writeU8(k),
+      (s, v: number) => s.writeU8(v)
+    );
+    expect(bytesToHex(ser.toBytes())).toBe("00");
+  });
+
+  it("serialize single entry map", () => {
+    const ser = new BcsSerializer();
+    ser.writeMap(
+      new Map([[1, 10]]),
+      (s, k) => s.writeU8(k),
+      (s, v) => s.writeU8(v)
+    );
+    expect(bytesToHex(ser.toBytes())).toBe("01010a");
+  });
+
+  it("serialize sorted map", () => {
+    const ser = new BcsSerializer();
+    // Keys should be serialized in sorted order by BCS bytes
+    ser.writeMap(
+      new Map([
+        [3, 40],
+        [1, 10],
+        [2, 20],
+      ]),
+      (s, k) => s.writeU8(k),
+      (s, v) => s.writeU8(v)
+    );
+    expect(bytesToHex(ser.toBytes())).toBe("03010a02140328");
+  });
+
+  it("deserialize empty map", () => {
+    const des = new BcsDeserializer(hexToBytes("00"));
+    const result = des.readMap(
+      (d) => d.readU8(),
+      (d) => d.readU8()
+    );
+    expect(result.size).toBe(0);
+  });
+
+  it("deserialize map with entries", () => {
+    const des = new BcsDeserializer(hexToBytes("03010a02140328"));
+    const result = des.readMap(
+      (d) => d.readU8(),
+      (d) => d.readU8()
+    );
+    expect(result.size).toBe(3);
+    expect(result.get(1)).toBe(10);
+    expect(result.get(2)).toBe(20);
+    expect(result.get(3)).toBe(40);  // 0x28 = 40
+  });
+
+  it("reject unsorted map keys", () => {
+    // Keys are [2, 1] which is not sorted
+    const des = new BcsDeserializer(hexToBytes("0302140110"));
+    expect(() =>
+      des.readMap(
+        (d) => d.readU8(),
+        (d) => d.readU8()
+      )
+    ).toThrow(BcsError);
+  });
+
+  it("reject duplicate map keys", () => {
+    // Keys [1, 1] are duplicates
+    const des = new BcsDeserializer(hexToBytes("0201100110"));
+    expect(() =>
+      des.readMap(
+        (d) => d.readU8(),
+        (d) => d.readU8()
+      )
+    ).toThrow(BcsError);
   });
 });
 

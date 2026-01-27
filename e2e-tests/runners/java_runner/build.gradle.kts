@@ -1,22 +1,20 @@
 plugins {
-    kotlin("jvm") version "2.3.0"
+    java
     application
 }
 
 application {
-    mainClass.set("KotlinRunnerKt")
+    mainClass.set("JavaRunner")
 }
 
 repositories {
     mavenCentral()
 }
 
-dependencies {
-    implementation(files("../../../sdks/kotlin/build/libs/bcs-kotlin-0.1.0.jar"))
-}
-
-kotlin {
-    jvmToolchain(23)
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
 }
 
 tasks.named<JavaExec>("run") {
@@ -25,7 +23,7 @@ tasks.named<JavaExec>("run") {
 
 tasks.jar {
     manifest {
-        attributes["Main-Class"] = "KotlinRunnerKt"
+        attributes["Main-Class"] = "JavaRunner"
     }
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE

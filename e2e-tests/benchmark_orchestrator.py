@@ -116,7 +116,7 @@ def get_benchmark_runner_command(language: str) -> tuple[list[str], Optional[Pat
     if language == "python":
         return ["python3", str(runner_dir / "python_runner.py"), "--benchmark"], None
     elif language == "typescript":
-        return ["npx", "tsx", str(runner_dir / "typescript_runner.ts"), "--benchmark"], sdk_dir
+        return ["bun", "run", str(runner_dir / "typescript_runner.ts"), "--benchmark"], sdk_dir
     elif language == "go":
         return ["go", "run", str(runner_dir / "go_runner.go"), "--benchmark"], sdk_dir
     elif language == "rust":
@@ -141,27 +141,9 @@ def get_benchmark_runner_command(language: str) -> tuple[list[str], Optional[Pat
     elif language == "kotlin":
         import shutil
         kt_runner_dir = runner_dir / "kotlin_runner"
-        kt_source = kt_runner_dir / "src" / "main" / "kotlin" / "KotlinRunner.kt"
-        kt_jar = runner_dir / "kotlin_runner.jar"
-        kt_sdk_jar = SDKS_DIR / "kotlin" / "build" / "libs" / "bcs-kotlin-0.1.0.jar"
-
-        if kt_source.exists() and shutil.which("kotlinc"):
-            needs_compile = not kt_jar.exists()
-            if kt_jar.exists() and kt_source.stat().st_mtime > kt_jar.stat().st_mtime:
-                needs_compile = True
-
-            if needs_compile and kt_sdk_jar.exists():
-                subprocess.run(
-                    ["kotlinc", str(kt_source), "-include-runtime", "-cp", str(kt_sdk_jar), "-d", str(kt_jar)],
-                    capture_output=True
-                )
-
-            if kt_jar.exists():
-                return ["java", "-cp", f"{kt_jar}:{kt_sdk_jar}", "KotlinRunnerKt", "--benchmark"], None
-
-        kt_standalone = runner_dir / "kotlin_runner.kt"
-        if kt_standalone.exists() and shutil.which("kotlin"):
-            return ["kotlin", str(kt_standalone), "--benchmark"], None
+        if kt_runner_dir.exists() and shutil.which("gradle"):
+            # Use Gradle to run the Kotlin runner
+            return ["gradle", "-q", "--console=plain", "run", "--args=--benchmark"], kt_runner_dir
         return [], None
     elif language == "csharp":
         csharp_dir = runner_dir / "CSharpRunner"
@@ -192,7 +174,12 @@ def get_benchmark_runner_command(language: str) -> tuple[list[str], Optional[Pat
     elif language == "dart":
         return ["dart", "run", str(runner_dir / "dart_runner.dart"), "--benchmark"], None
     elif language == "java":
-        return ["java", str(runner_dir / "java_runner.java"), "--benchmark"], None
+        import shutil
+        java_runner_dir = runner_dir / "java_runner"
+        if java_runner_dir.exists() and shutil.which("gradle"):
+            # Use Gradle to run the Java runner
+            return ["gradle", "-q", "--console=plain", "run", "--args=--benchmark"], java_runner_dir
+        return [], None
     else:
         return [], None
 

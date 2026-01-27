@@ -305,6 +305,30 @@ class BcsTest {
     }
 
     @Nested
+    @DisplayName("I16 serialization")
+    class I16Tests {
+
+        @Test
+        void testVectorsI16() {
+            JsonNode vectors = getTestVectors("primitives", "i16", "valid");
+            if (vectors == null) {
+                return;
+            }
+            for (JsonNode tc : vectors) {
+                int value = tc.get("value").asInt();
+                String bcsHex = tc.get("bcs_hex").asText();
+
+                BcsSerializer ser = new BcsSerializer();
+                ser.writeI16((short) value);
+                assertEquals(bcsHex, bytesToHex(ser.toBytes()), "serialize " + tc.get("name").asText());
+
+                BcsDeserializer des = new BcsDeserializer(hexToBytes(bcsHex));
+                assertEquals(value, des.readI16(), "deserialize " + tc.get("name").asText());
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("I32 serialization")
     class I32Tests {
 
@@ -324,6 +348,81 @@ class BcsTest {
 
                 BcsDeserializer des = new BcsDeserializer(hexToBytes(bcsHex));
                 assertEquals(value, des.readI32(), "deserialize " + tc.get("name").asText());
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("I64 serialization")
+    class I64Tests {
+
+        @Test
+        void testVectorsI64() {
+            JsonNode vectors = getTestVectors("primitives", "i64", "valid");
+            if (vectors == null) {
+                return;
+            }
+            for (JsonNode tc : vectors) {
+                String valueStr = tc.get("value").asText();
+                long value = new BigInteger(valueStr).longValue();
+                String bcsHex = tc.get("bcs_hex").asText();
+
+                BcsSerializer ser = new BcsSerializer();
+                ser.writeI64(value);
+                assertEquals(bcsHex, bytesToHex(ser.toBytes()), "serialize " + tc.get("name").asText());
+
+                BcsDeserializer des = new BcsDeserializer(hexToBytes(bcsHex));
+                assertEquals(value, des.readI64(), "deserialize " + tc.get("name").asText());
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("I128 serialization")
+    class I128Tests {
+
+        @Test
+        void testVectorsI128() {
+            JsonNode vectors = getTestVectors("primitives", "i128", "valid");
+            if (vectors == null) {
+                return;
+            }
+            for (JsonNode tc : vectors) {
+                String valueStr = tc.get("value").asText();
+                BigInteger value = new BigInteger(valueStr);
+                String bcsHex = tc.get("bcs_hex").asText();
+
+                BcsSerializer ser = new BcsSerializer();
+                ser.writeI128(value);
+                assertEquals(bcsHex, bytesToHex(ser.toBytes()), "serialize " + tc.get("name").asText());
+
+                BcsDeserializer des = new BcsDeserializer(hexToBytes(bcsHex));
+                assertEquals(0, value.compareTo(des.readI128()), "deserialize " + tc.get("name").asText());
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("I256 serialization")
+    class I256Tests {
+
+        @Test
+        void testVectorsI256() {
+            JsonNode vectors = getTestVectors("primitives", "i256", "valid");
+            if (vectors == null) {
+                return;
+            }
+            for (JsonNode tc : vectors) {
+                String valueStr = tc.get("value").asText();
+                BigInteger value = new BigInteger(valueStr);
+                String bcsHex = tc.get("bcs_hex").asText();
+
+                BcsSerializer ser = new BcsSerializer();
+                ser.writeI256(value);
+                assertEquals(bcsHex, bytesToHex(ser.toBytes()), "serialize " + tc.get("name").asText());
+
+                BcsDeserializer des = new BcsDeserializer(hexToBytes(bcsHex));
+                assertEquals(0, value.compareTo(des.readI256()), "deserialize " + tc.get("name").asText());
             }
         }
     }
@@ -355,9 +454,36 @@ class BcsTest {
         }
 
         @Test
-        void rejectNonCanonicalEncoding() {
+        void rejectNonCanonicalEncoding2Byte() {
             // 0x80 0x00 is non-canonical for 0
             BcsError error = assertThrows(BcsError.class, () -> Uleb128.decode(new byte[] {(byte) 0x80, 0x00}, 0));
+            assertEquals(BcsError.Type.NON_CANONICAL_ULEB128, error.getType());
+        }
+
+        @Test
+        void rejectNonCanonicalEncoding3Byte() {
+            // 0x80 0x80 0x00 is non-canonical
+            BcsError error = assertThrows(
+                    BcsError.class,
+                    () -> Uleb128.decode(new byte[] {(byte) 0x80, (byte) 0x80, 0x00}, 0));
+            assertEquals(BcsError.Type.NON_CANONICAL_ULEB128, error.getType());
+        }
+
+        @Test
+        void rejectNonCanonicalEncoding4Byte() {
+            // 0x80 0x80 0x80 0x00 is non-canonical
+            BcsError error = assertThrows(
+                    BcsError.class,
+                    () -> Uleb128.decode(new byte[] {(byte) 0x80, (byte) 0x80, (byte) 0x80, 0x00}, 0));
+            assertEquals(BcsError.Type.NON_CANONICAL_ULEB128, error.getType());
+        }
+
+        @Test
+        void rejectNonCanonicalEncoding5Byte() {
+            // 0x80 0x80 0x80 0x80 0x00 is non-canonical (could be encoded in 4 bytes)
+            BcsError error = assertThrows(
+                    BcsError.class,
+                    () -> Uleb128.decode(new byte[] {(byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, 0x00}, 0));
             assertEquals(BcsError.Type.NON_CANONICAL_ULEB128, error.getType());
         }
 
@@ -367,6 +493,15 @@ class BcsTest {
             BcsError error = assertThrows(
                     BcsError.class,
                     () -> Uleb128.decode(new byte[] {(byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, 0x01}, 0));
+            assertEquals(BcsError.Type.ULEB128_OVERFLOW, error.getType());
+        }
+
+        @Test
+        void rejectOverflow5ByteTooLarge() {
+            // 5th byte >= 0x10 would overflow u32
+            BcsError error = assertThrows(
+                    BcsError.class,
+                    () -> Uleb128.decode(new byte[] {(byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, 0x10}, 0));
             assertEquals(BcsError.Type.ULEB128_OVERFLOW, error.getType());
         }
     }
