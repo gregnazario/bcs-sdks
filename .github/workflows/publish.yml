@@ -1,0 +1,468 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'python-v*'
+      - 'typescript-v*'
+      - 'elixir-v*'
+      - 'java-v*'
+      - 'go-v*'
+      - 'csharp-v*'
+      - 'rust-v*'
+      - 'cpp-v*'
+      - 'php-v*'
+      - 'kotlin-v*'
+      - 'swift-v*'
+      - 'ruby-v*'
+      - 'c-v*'
+      - 'zig-v*'
+      - 'dart-v*'
+      - 'haskell-v*'
+      - 'lua-v*'
+      - 'ocaml-v*'
+      - 'perl-v*'
+      - 'groovy-v*'
+      - 'erlang-v*'
+      - 'lisp-v*'
+      - 'shell-v*'
+      - 'powershell-v*'
+
+jobs:
+  # =============================================================================
+  # PYTHON - PyPI
+  # =============================================================================
+  
+  publish-python:
+    name: Publish Python to PyPI
+    if: startsWith(github.ref, 'refs/tags/python-v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # For trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build tools
+        run: pip install build twine
+      - name: Build package
+        run: make build
+        working-directory: sdks/python
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdks/python/dist/
+
+  # =============================================================================
+  # TYPESCRIPT - npm
+  # =============================================================================
+  
+  publish-typescript:
+    name: Publish TypeScript to npm
+    if: startsWith(github.ref, 'refs/tags/typescript-v')
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Install dependencies
+        run: npm ci
+        working-directory: sdks/typescript
+      - name: Build
+        run: make build
+        working-directory: sdks/typescript
+      - name: Publish to npm
+        run: npm publish --access public
+        working-directory: sdks/typescript
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # =============================================================================
+  # ELIXIR - Hex.pm
+  # =============================================================================
+  
+  publish-elixir:
+    name: Publish Elixir to Hex
+    if: startsWith(github.ref, 'refs/tags/elixir-v')
+    runs-on: ubuntu-latest
+    environment: hex
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.16'
+          otp-version: '26'
+      - name: Install dependencies
+        run: mix deps.get
+        working-directory: sdks/elixir
+      - name: Build
+        run: make build
+        working-directory: sdks/elixir
+      - name: Publish to Hex
+        run: mix hex.publish --yes
+        working-directory: sdks/elixir
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+
+  # =============================================================================
+  # JAVA - Maven Central
+  # =============================================================================
+  
+  publish-java:
+    name: Publish Java to Maven Central
+    if: startsWith(github.ref, 'refs/tags/java-v')
+    runs-on: ubuntu-latest
+    environment: maven
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          server-id: ossrh
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+      - name: Build and publish
+        run: make publish
+        working-directory: sdks/java
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+
+  # =============================================================================
+  # GO - Go Proxy (automatic via git tag)
+  # =============================================================================
+  
+  publish-go:
+    name: Publish Go Module
+    if: startsWith(github.ref, 'refs/tags/go-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Verify module
+        run: go mod verify
+        working-directory: sdks/go
+      - name: Request proxy update
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/go-}
+          curl "https://sum.golang.org/lookup/github.com/${{ github.repository }}/sdks/go@$VERSION"
+
+  # =============================================================================
+  # C# - NuGet
+  # =============================================================================
+  
+  publish-csharp:
+    name: Publish C# to NuGet
+    if: startsWith(github.ref, 'refs/tags/csharp-v')
+    runs-on: ubuntu-latest
+    environment: nuget
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build package
+        run: make build
+        working-directory: sdks/csharp
+      - name: Publish to NuGet
+        run: dotnet nuget push **/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+        working-directory: sdks/csharp
+
+  # =============================================================================
+  # RUST - crates.io
+  # =============================================================================
+  
+  publish-rust:
+    name: Publish Rust to crates.io
+    if: startsWith(github.ref, 'refs/tags/rust-v')
+    runs-on: ubuntu-latest
+    environment: crates
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish to crates.io
+        run: cargo publish
+        working-directory: sdks/rust
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+
+  # =============================================================================
+  # PHP - Packagist (auto-updates via webhook, manual tag)
+  # =============================================================================
+  
+  publish-php:
+    name: Publish PHP to Packagist
+    if: startsWith(github.ref, 'refs/tags/php-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Notify Packagist
+        run: |
+          curl -X POST "https://packagist.org/api/update-package?username=${{ secrets.PACKAGIST_USERNAME }}&apiToken=${{ secrets.PACKAGIST_TOKEN }}" \
+            -d "repository=https://github.com/${{ github.repository }}"
+
+  # =============================================================================
+  # KOTLIN - Maven Central (same as Java)
+  # =============================================================================
+  
+  publish-kotlin:
+    name: Publish Kotlin to Maven Central
+    if: startsWith(github.ref, 'refs/tags/kotlin-v')
+    runs-on: ubuntu-latest
+    environment: maven
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+      - name: Build and publish
+        run: make publish
+        working-directory: sdks/kotlin
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+
+  # =============================================================================
+  # SWIFT - Swift Package Index (auto-indexed via git tag)
+  # =============================================================================
+  
+  publish-swift:
+    name: Publish Swift Package
+    if: startsWith(github.ref, 'refs/tags/swift-v')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build package
+        run: swift build -c release
+        working-directory: sdks/swift
+      - name: Notify Swift Package Index
+        run: |
+          echo "Swift Package Index will auto-index based on git tag"
+
+  # =============================================================================
+  # RUBY - RubyGems
+  # =============================================================================
+  
+  publish-ruby:
+    name: Publish Ruby to RubyGems
+    if: startsWith(github.ref, 'refs/tags/ruby-v')
+    runs-on: ubuntu-latest
+    environment: rubygems
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - name: Build gem
+        run: make build
+        working-directory: sdks/ruby
+      - name: Publish to RubyGems
+        run: |
+          mkdir -p ~/.gem
+          echo "---" > ~/.gem/credentials
+          echo ":rubygems_api_key: ${{ secrets.RUBYGEMS_API_KEY }}" >> ~/.gem/credentials
+          chmod 0600 ~/.gem/credentials
+          gem push *.gem
+        working-directory: sdks/ruby
+
+  # =============================================================================
+  # DART - pub.dev
+  # =============================================================================
+  
+  publish-dart:
+    name: Publish Dart to pub.dev
+    if: startsWith(github.ref, 'refs/tags/dart-v')
+    runs-on: ubuntu-latest
+    environment: pub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Setup credentials
+        run: |
+          mkdir -p ~/.config/dart
+          echo '${{ secrets.PUB_CREDENTIALS }}' > ~/.config/dart/pub-credentials.json
+      - name: Publish to pub.dev
+        run: dart pub publish --force
+        working-directory: sdks/dart
+
+  # =============================================================================
+  # HASKELL - Hackage
+  # =============================================================================
+  
+  publish-haskell:
+    name: Publish Haskell to Hackage
+    if: startsWith(github.ref, 'refs/tags/haskell-v')
+    runs-on: ubuntu-latest
+    environment: hackage
+    steps:
+      - uses: actions/checkout@v4
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.8'
+          cabal-version: 'latest'
+      - name: Build and publish
+        run: |
+          cabal sdist
+          cabal upload --publish dist-newstyle/sdist/*.tar.gz
+        working-directory: sdks/haskell
+        env:
+          HACKAGE_USERNAME: ${{ secrets.HACKAGE_USERNAME }}
+          HACKAGE_PASSWORD: ${{ secrets.HACKAGE_PASSWORD }}
+
+  # =============================================================================
+  # LUA - LuaRocks
+  # =============================================================================
+  
+  publish-lua:
+    name: Publish Lua to LuaRocks
+    if: startsWith(github.ref, 'refs/tags/lua-v')
+    runs-on: ubuntu-latest
+    environment: luarocks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: '5.4'
+      - uses: leafo/gh-actions-luarocks@v4
+      - name: Publish to LuaRocks
+        run: luarocks upload *.rockspec --api-key=${{ secrets.LUAROCKS_API_KEY }}
+        working-directory: sdks/lua
+
+  # =============================================================================
+  # OCAML - OPAM
+  # =============================================================================
+  
+  publish-ocaml:
+    name: Publish OCaml to OPAM
+    if: startsWith(github.ref, 'refs/tags/ocaml-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create OPAM PR
+        run: |
+          echo "OPAM packages are published via PR to opam-repository"
+          echo "See: https://github.com/ocaml/opam-repository"
+
+  # =============================================================================
+  # PERL - CPAN
+  # =============================================================================
+  
+  publish-perl:
+    name: Publish Perl to CPAN
+    if: startsWith(github.ref, 'refs/tags/perl-v')
+    runs-on: ubuntu-latest
+    environment: cpan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+      - name: Build distribution
+        run: |
+          perl Makefile.PL
+          make dist
+        working-directory: sdks/perl
+      - name: Upload to CPAN
+        run: cpan-upload *.tar.gz
+        working-directory: sdks/perl
+        env:
+          CPAN_USERNAME: ${{ secrets.CPAN_USERNAME }}
+          CPAN_PASSWORD: ${{ secrets.CPAN_PASSWORD }}
+
+  # =============================================================================
+  # GROOVY - Maven Central (same as Java/Kotlin)
+  # =============================================================================
+  
+  publish-groovy:
+    name: Publish Groovy to Maven Central
+    if: startsWith(github.ref, 'refs/tags/groovy-v')
+    runs-on: ubuntu-latest
+    environment: maven
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+      - name: Build and publish
+        run: make publish
+        working-directory: sdks/groovy
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+
+  # =============================================================================
+  # ERLANG - Hex.pm
+  # =============================================================================
+  
+  publish-erlang:
+    name: Publish Erlang to Hex
+    if: startsWith(github.ref, 'refs/tags/erlang-v')
+    runs-on: ubuntu-latest
+    environment: hex
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '26'
+          rebar3-version: '3.22'
+      - name: Publish to Hex
+        run: rebar3 hex publish --yes
+        working-directory: sdks/erlang
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+
+  # =============================================================================
+  # LISP - Quicklisp (manual submission)
+  # =============================================================================
+  
+  publish-lisp:
+    name: Publish Common Lisp
+    if: startsWith(github.ref, 'refs/tags/lisp-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Quicklisp submission info
+        run: |
+          echo "Quicklisp packages are submitted via:"
+          echo "https://github.com/quicklisp/quicklisp-projects/issues"
+
+  # =============================================================================
+  # POWERSHELL - PSGallery
+  # =============================================================================
+  
+  publish-powershell:
+    name: Publish PowerShell to PSGallery
+    if: startsWith(github.ref, 'refs/tags/powershell-v')
+    runs-on: windows-latest
+    environment: psgallery
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish to PSGallery
+        shell: pwsh
+        run: |
+          Publish-Module -Path ./sdks/powershell/Bcs -NuGetApiKey $env:PSGALLERY_API_KEY
+        env:
+          PSGALLERY_API_KEY: ${{ secrets.PSGALLERY_API_KEY }}

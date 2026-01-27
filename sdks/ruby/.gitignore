@@ -1,0 +1,29 @@
+# Gem files
+*.gem
+pkg/
+
+# Bundle
+.bundle/
+vendor/bundle/
+Gemfile.lock
+
+# Coverage
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+doc/
+.yardoc/
+
+# Test artifacts
+tmp/
+log/

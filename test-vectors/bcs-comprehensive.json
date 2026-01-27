@@ -1,0 +1,592 @@
+{
+  "version": "1.0.0",
+  "description": "Comprehensive BCS test vectors for multi-language SDK validation",
+  "spec_version": "1.0.0",
+
+  "primitives": {
+    "bool": {
+      "valid": [
+        {"name": "false", "value": false, "bcs_hex": "00"},
+        {"name": "true", "value": true, "bcs_hex": "01"}
+      ],
+      "invalid": [
+        {"name": "invalid_0x02", "bcs_hex": "02", "error": "InvalidBoolean"},
+        {"name": "invalid_0xff", "bcs_hex": "ff", "error": "InvalidBoolean"},
+        {"name": "empty", "bcs_hex": "", "error": "UnexpectedEof"}
+      ]
+    },
+
+    "u8": {
+      "valid": [
+        {"name": "zero", "value": 0, "bcs_hex": "00"},
+        {"name": "one", "value": 1, "bcs_hex": "01"},
+        {"name": "mid", "value": 127, "bcs_hex": "7f"},
+        {"name": "mid_plus_one", "value": 128, "bcs_hex": "80"},
+        {"name": "max_minus_one", "value": 254, "bcs_hex": "fe"},
+        {"name": "max", "value": 255, "bcs_hex": "ff"}
+      ],
+      "invalid": [
+        {"name": "empty", "bcs_hex": "", "error": "UnexpectedEof"}
+      ]
+    },
+
+    "u16": {
+      "valid": [
+        {"name": "zero", "value": 0, "bcs_hex": "0000"},
+        {"name": "one", "value": 1, "bcs_hex": "0100"},
+        {"name": "256", "value": 256, "bcs_hex": "0001"},
+        {"name": "0x1234", "value": 4660, "bcs_hex": "3412"},
+        {"name": "max_minus_one", "value": 65534, "bcs_hex": "feff"},
+        {"name": "max", "value": 65535, "bcs_hex": "ffff"}
+      ],
+      "invalid": [
+        {"name": "truncated_1byte", "bcs_hex": "01", "error": "UnexpectedEof"},
+        {"name": "empty", "bcs_hex": "", "error": "UnexpectedEof"}
+      ]
+    },
+
+    "u32": {
+      "valid": [
+        {"name": "zero", "value": 0, "bcs_hex": "00000000"},
+        {"name": "one", "value": 1, "bcs_hex": "01000000"},
+        {"name": "256", "value": 256, "bcs_hex": "00010000"},
+        {"name": "0x12345678", "value": 305419896, "bcs_hex": "78563412"},
+        {"name": "max_minus_one", "value": 4294967294, "bcs_hex": "feffffff"},
+        {"name": "max", "value": 4294967295, "bcs_hex": "ffffffff"}
+      ],
+      "invalid": [
+        {"name": "truncated_3bytes", "bcs_hex": "010203", "error": "UnexpectedEof"},
+        {"name": "truncated_1byte", "bcs_hex": "01", "error": "UnexpectedEof"},
+        {"name": "empty", "bcs_hex": "", "error": "UnexpectedEof"}
+      ]
+    },
+
+    "u64": {
+      "valid": [
+        {"name": "zero", "value": "0", "bcs_hex": "0000000000000000"},
+        {"name": "one", "value": "1", "bcs_hex": "0100000000000000"},
+        {"name": "1_apt_octas", "value": "100000000", "bcs_hex": "00e1f50500000000", "note": "1 APT = 10^8 octas"},
+        {"name": "0x123456789abcdef0", "value": "1311768467463790320", "bcs_hex": "f0debc9a78563412"},
+        {"name": "max_minus_one", "value": "18446744073709551614", "bcs_hex": "feffffffffffffff"},
+        {"name": "max", "value": "18446744073709551615", "bcs_hex": "ffffffffffffffff"}
+      ],
+      "invalid": [
+        {"name": "truncated_7bytes", "bcs_hex": "01020304050607", "error": "UnexpectedEof"},
+        {"name": "truncated_1byte", "bcs_hex": "01", "error": "UnexpectedEof"},
+        {"name": "empty", "bcs_hex": "", "error": "UnexpectedEof"}
+      ]
+    },
+
+    "u128": {
+      "valid": [
+        {"name": "zero", "value": "0", "bcs_hex": "00000000000000000000000000000000"},
+        {"name": "one", "value": "1", "bcs_hex": "01000000000000000000000000000000"},
+        {"name": "u64_max", "value": "18446744073709551615", "bcs_hex": "ffffffffffffffff0000000000000000"},
+        {"name": "u64_max_plus_one", "value": "18446744073709551616", "bcs_hex": "00000000000000000100000000000000"},
+        {"name": "max", "value": "340282366920938463463374607431768211455", "bcs_hex": "ffffffffffffffffffffffffffffffff"}
+      ],
+      "invalid": [
+        {"name": "truncated_15bytes", "bcs_hex": "0102030405060708090a0b0c0d0e0f", "error": "UnexpectedEof"},
+        {"name": "empty", "bcs_hex": "", "error": "UnexpectedEof"}
+      ]
+    },
+
+    "u256": {
+      "valid": [
+        {"name": "zero", "value": "0", "bcs_hex": "0000000000000000000000000000000000000000000000000000000000000000"},
+        {"name": "one", "value": "1", "bcs_hex": "0100000000000000000000000000000000000000000000000000000000000000"},
+        {"name": "u128_max", "value": "340282366920938463463374607431768211455", "bcs_hex": "ffffffffffffffffffffffffffffffff00000000000000000000000000000000"},
+        {"name": "u128_max_plus_one", "value": "340282366920938463463374607431768211456", "bcs_hex": "0000000000000000000000000000000001000000000000000000000000000000"},
+        {"name": "max", "value": "115792089237316195423570985008687907853269984665640564039457584007913129639935", "bcs_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"}
+      ],
+      "invalid": [
+        {"name": "truncated_31bytes", "bcs_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "error": "UnexpectedEof"},
+        {"name": "empty", "bcs_hex": "", "error": "UnexpectedEof"}
+      ]
+    },
+
+    "i8": {
+      "valid": [
+        {"name": "zero", "value": 0, "bcs_hex": "00"},
+        {"name": "one", "value": 1, "bcs_hex": "01"},
+        {"name": "minus_one", "value": -1, "bcs_hex": "ff"},
+        {"name": "max", "value": 127, "bcs_hex": "7f"},
+        {"name": "min", "value": -128, "bcs_hex": "80"}
+      ]
+    },
+
+    "i16": {
+      "valid": [
+        {"name": "zero", "value": 0, "bcs_hex": "0000"},
+        {"name": "one", "value": 1, "bcs_hex": "0100"},
+        {"name": "minus_one", "value": -1, "bcs_hex": "ffff"},
+        {"name": "max", "value": 32767, "bcs_hex": "ff7f"},
+        {"name": "min", "value": -32768, "bcs_hex": "0080"}
+      ]
+    },
+
+    "i32": {
+      "valid": [
+        {"name": "zero", "value": 0, "bcs_hex": "00000000"},
+        {"name": "one", "value": 1, "bcs_hex": "01000000"},
+        {"name": "minus_one", "value": -1, "bcs_hex": "ffffffff"},
+        {"name": "max", "value": 2147483647, "bcs_hex": "ffffff7f"},
+        {"name": "min", "value": -2147483648, "bcs_hex": "00000080"}
+      ]
+    },
+
+    "i64": {
+      "valid": [
+        {"name": "zero", "value": "0", "bcs_hex": "0000000000000000"},
+        {"name": "one", "value": "1", "bcs_hex": "0100000000000000"},
+        {"name": "minus_one", "value": "-1", "bcs_hex": "ffffffffffffffff"},
+        {"name": "max", "value": "9223372036854775807", "bcs_hex": "ffffffffffffff7f"},
+        {"name": "min", "value": "-9223372036854775808", "bcs_hex": "0000000000000080"}
+      ]
+    },
+
+    "i128": {
+      "valid": [
+        {"name": "zero", "value": "0", "bcs_hex": "00000000000000000000000000000000"},
+        {"name": "one", "value": "1", "bcs_hex": "01000000000000000000000000000000"},
+        {"name": "minus_one", "value": "-1", "bcs_hex": "ffffffffffffffffffffffffffffffff"},
+        {"name": "max", "value": "170141183460469231731687303715884105727", "bcs_hex": "ffffffffffffffffffffffffffffff7f"},
+        {"name": "min", "value": "-170141183460469231731687303715884105728", "bcs_hex": "00000000000000000000000000000080"}
+      ]
+    },
+
+    "i256": {
+      "valid": [
+        {"name": "zero", "value": "0", "bcs_hex": "0000000000000000000000000000000000000000000000000000000000000000"},
+        {"name": "one", "value": "1", "bcs_hex": "0100000000000000000000000000000000000000000000000000000000000000"},
+        {"name": "minus_one", "value": "-1", "bcs_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"},
+        {"name": "max", "value": "57896044618658097711785492504343953926634992332820282019728792003956564819967", "bcs_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"},
+        {"name": "min", "value": "-57896044618658097711785492504343953926634992332820282019728792003956564819968", "bcs_hex": "0000000000000000000000000000000000000000000000000000000000000080"}
+      ]
+    }
+  },
+
+  "uleb128": {
+    "valid": [
+      {"name": "zero", "value": 0, "bcs_hex": "00", "bytes": 1},
+      {"name": "one", "value": 1, "bcs_hex": "01", "bytes": 1},
+      {"name": "max_1byte", "value": 127, "bcs_hex": "7f", "bytes": 1},
+      {"name": "min_2byte", "value": 128, "bcs_hex": "8001", "bytes": 2},
+      {"name": "255", "value": 255, "bcs_hex": "ff01", "bytes": 2},
+      {"name": "256", "value": 256, "bcs_hex": "8002", "bytes": 2},
+      {"name": "max_2byte", "value": 16383, "bcs_hex": "ff7f", "bytes": 2},
+      {"name": "min_3byte", "value": 16384, "bcs_hex": "808001", "bytes": 3},
+      {"name": "max_3byte", "value": 2097151, "bcs_hex": "ffff7f", "bytes": 3},
+      {"name": "min_4byte", "value": 2097152, "bcs_hex": "80808001", "bytes": 4},
+      {"name": "max_4byte", "value": 268435455, "bcs_hex": "ffffff7f", "bytes": 4},
+      {"name": "min_5byte", "value": 268435456, "bcs_hex": "8080808001", "bytes": 5},
+      {"name": "max_sequence_length", "value": 2147483647, "bcs_hex": "ffffffff07", "bytes": 5, "note": "MAX_SEQUENCE_LENGTH = 2^31 - 1"},
+      {"name": "u32_max", "value": 4294967295, "bcs_hex": "ffffffff0f", "bytes": 5}
+    ],
+    "invalid": [
+      {"name": "non_canonical_zero", "bcs_hex": "8000", "error": "NonCanonicalUleb128", "note": "0 with trailing zero byte"},
+      {"name": "non_canonical_one", "bcs_hex": "8100", "error": "NonCanonicalUleb128", "note": "1 with trailing zero byte"},
+      {"name": "non_canonical_128", "bcs_hex": "80810000", "error": "NonCanonicalUleb128", "note": "128 with extra zero bytes"},
+      {"name": "overflow_6bytes", "bcs_hex": "808080808001", "error": "Uleb128Overflow", "note": "2^36 - too large"},
+      {"name": "overflow_u32", "bcs_hex": "8080808010", "error": "Uleb128Overflow", "note": "2^33 - exceeds u32"},
+      {"name": "truncated_continuation", "bcs_hex": "80", "error": "UnexpectedEof", "note": "continuation bit set but no more bytes"},
+      {"name": "truncated_2byte", "bcs_hex": "8080", "error": "UnexpectedEof"}
+    ]
+  },
+
+  "bytes": {
+    "valid": [
+      {"name": "empty", "value": [], "bcs_hex": "00"},
+      {"name": "single", "value": [42], "bcs_hex": "012a"},
+      {"name": "three", "value": [1, 2, 3], "bcs_hex": "03010203"},
+      {"name": "255_zeros", "value_description": "255 zero bytes", "length": 255, "bcs_hex_prefix": "ff01", "note": "length 255 = 0xff 0x01 in ULEB128"},
+      {"name": "all_byte_values", "value_description": "bytes 0x00 through 0xff", "length": 256, "bcs_hex_prefix": "8002"}
+    ],
+    "invalid": [
+      {"name": "length_exceeds_data", "bcs_hex": "05010203", "error": "UnexpectedEof", "note": "claims 5 bytes but only 3 present"},
+      {"name": "length_overflow", "bcs_hex": "ffffffff0f010203", "error": "ExceededMaxLength", "note": "length = u32_max"}
+    ]
+  },
+
+  "strings": {
+    "valid": [
+      {"name": "empty", "value": "", "bcs_hex": "00"},
+      {"name": "hello", "value": "hello", "bcs_hex": "0568656c6c6f"},
+      {"name": "hello_world", "value": "hello world", "bcs_hex": "0b68656c6c6f20776f726c64"},
+      {"name": "unicode_2byte", "value": "héllo", "bcs_hex": "0668c3a96c6c6f", "note": "é is 2 UTF-8 bytes"},
+      {"name": "unicode_3byte", "value": "日本語", "bcs_hex": "09e697a5e69cace8aa9e", "note": "each char is 3 UTF-8 bytes"},
+      {"name": "unicode_4byte", "value": "😀", "bcs_hex": "04f09f9880", "note": "emoji is 4 UTF-8 bytes"},
+      {"name": "mixed_unicode", "value": "Hello, 世界! 🌍", "bcs_hex": "1348656c6c6f2c20e4b896e7958c2120f09f8c8d"}
+    ],
+    "invalid": [
+      {"name": "invalid_utf8_continuation", "bcs_hex": "01ff", "error": "InvalidUtf8", "note": "0xff is not valid UTF-8"},
+      {"name": "invalid_utf8_overlong", "bcs_hex": "02c080", "error": "InvalidUtf8", "note": "overlong encoding of NUL"},
+      {"name": "truncated_utf8", "bcs_hex": "02c3", "error": "UnexpectedEof", "note": "length says 2 bytes but only 1 byte available"}
+    ]
+  },
+
+  "option": {
+    "valid": [
+      {"name": "none", "value": null, "inner_type": "any", "bcs_hex": "00"},
+      {"name": "some_u8_zero", "value": {"some": 0}, "inner_type": "u8", "bcs_hex": "0100"},
+      {"name": "some_u8_42", "value": {"some": 42}, "inner_type": "u8", "bcs_hex": "012a"},
+      {"name": "some_u64", "value": {"some": "1000000"}, "inner_type": "u64", "bcs_hex": "0140420f0000000000"},
+      {"name": "some_bool_true", "value": {"some": true}, "inner_type": "bool", "bcs_hex": "0101"},
+      {"name": "some_bool_false", "value": {"some": false}, "inner_type": "bool", "bcs_hex": "0100"},
+      {"name": "some_string", "value": {"some": "hi"}, "inner_type": "string", "bcs_hex": "01026869"}
+    ],
+    "invalid": [
+      {"name": "invalid_tag_0x02", "bcs_hex": "02", "inner_type": "u8", "error": "InvalidOption"},
+      {"name": "invalid_tag_0xff", "bcs_hex": "ff", "inner_type": "u8", "error": "InvalidOption"},
+      {"name": "some_missing_value", "bcs_hex": "01", "inner_type": "u64", "error": "UnexpectedEof"}
+    ]
+  },
+
+  "vector": {
+    "valid": [
+      {"name": "empty_u8", "value": [], "inner_type": "u8", "bcs_hex": "00"},
+      {"name": "single_u8", "value": [42], "inner_type": "u8", "bcs_hex": "012a"},
+      {"name": "three_u8", "value": [1, 2, 3], "inner_type": "u8", "bcs_hex": "03010203"},
+      {"name": "empty_u64", "value": [], "inner_type": "u64", "bcs_hex": "00"},
+      {"name": "two_u64", "value": ["1", "2"], "inner_type": "u64", "bcs_hex": "0201000000000000000200000000000000"},
+      {"name": "three_bool", "value": [true, false, true], "inner_type": "bool", "bcs_hex": "03010001"},
+      {"name": "nested_empty", "value": [[], []], "inner_type": "vector<u8>", "bcs_hex": "020000"},
+      {"name": "nested_vectors", "value": [[1, 2], [3, 4]], "inner_type": "vector<u8>", "bcs_hex": "02020102020304", "note": "outer length 2, each inner length 2"},
+      {"name": "vector_of_strings", "value": ["a", "bb"], "inner_type": "string", "bcs_hex": "020161026262"}
+    ],
+    "invalid": [
+      {"name": "length_exceeds_data", "bcs_hex": "050102", "inner_type": "u8", "error": "UnexpectedEof"},
+      {"name": "inner_truncated", "bcs_hex": "0201", "inner_type": "u64", "error": "UnexpectedEof"}
+    ]
+  },
+
+  "fixed_array": {
+    "description": "Fixed-length arrays have no length prefix",
+    "valid": [
+      {"name": "u8_3", "value": [1, 2, 3], "type": "[u8; 3]", "bcs_hex": "010203"},
+      {"name": "u16_3", "value": [1, 2, 3], "type": "[u16; 3]", "bcs_hex": "010002000300"},
+      {"name": "u8_32_zeros", "value_description": "32 zero bytes", "type": "[u8; 32]", "bcs_hex": "0000000000000000000000000000000000000000000000000000000000000000"},
+      {"name": "address_0x1", "value_description": "address 0x1", "type": "[u8; 32]", "bcs_hex": "0000000000000000000000000000000000000000000000000000000000000001"},
+      {"name": "empty", "value": [], "type": "[u8; 0]", "bcs_hex": ""}
+    ],
+    "invalid": [
+      {"name": "truncated", "bcs_hex": "0102", "type": "[u8; 3]", "error": "UnexpectedEof"}
+    ]
+  },
+
+  "structs": {
+    "description": "Structs are serialized as concatenated fields in declaration order",
+    "examples": [
+      {
+        "name": "simple_two_fields",
+        "definition": {
+          "name": "SimpleStruct",
+          "fields": [
+            {"name": "a", "type": "u8"},
+            {"name": "b", "type": "u64"}
+          ]
+        },
+        "value": {"a": 1, "b": "100"},
+        "bcs_hex": "016400000000000000"
+      },
+      {
+        "name": "with_string",
+        "definition": {
+          "name": "NamedValue",
+          "fields": [
+            {"name": "name", "type": "string"},
+            {"name": "value", "type": "u64"}
+          ]
+        },
+        "value": {"name": "test", "value": "42"},
+        "bcs_hex": "04746573742a00000000000000"
+      },
+      {
+        "name": "nested_struct",
+        "definition": {
+          "name": "Outer",
+          "fields": [
+            {"name": "inner", "type": "Inner"},
+            {"name": "flag", "type": "bool"}
+          ]
+        },
+        "inner_definition": {
+          "name": "Inner",
+          "fields": [
+            {"name": "x", "type": "u32"}
+          ]
+        },
+        "value": {"inner": {"x": 42}, "flag": true},
+        "bcs_hex": "2a00000001"
+      },
+      {
+        "name": "transfer",
+        "definition": {
+          "name": "Transfer",
+          "fields": [
+            {"name": "sender", "type": "[u8; 32]"},
+            {"name": "recipient", "type": "[u8; 32]"},
+            {"name": "amount", "type": "u64"}
+          ]
+        },
+        "value": {
+          "sender": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "recipient": "0x0000000000000000000000000000000000000000000000000000000000000002",
+          "amount": "1000000"
+        },
+        "bcs_hex": "000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000020240420f0000000000"
+      }
+    ]
+  },
+
+  "enums": {
+    "description": "Enums are serialized as ULEB128 variant index followed by variant data",
+    "examples": [
+      {
+        "name": "unit_variant_0",
+        "definition": {
+          "name": "Status",
+          "variants": [
+            {"name": "Pending", "index": 0, "fields": []},
+            {"name": "Active", "index": 1, "fields": []},
+            {"name": "Completed", "index": 2, "fields": []}
+          ]
+        },
+        "value": "Pending",
+        "bcs_hex": "00"
+      },
+      {
+        "name": "unit_variant_1",
+        "definition": "same as above",
+        "value": "Active",
+        "bcs_hex": "01"
+      },
+      {
+        "name": "unit_variant_2",
+        "definition": "same as above",
+        "value": "Completed",
+        "bcs_hex": "02"
+      },
+      {
+        "name": "newtype_variant",
+        "definition": {
+          "name": "Message",
+          "variants": [
+            {"name": "Text", "index": 0, "fields": [{"type": "string"}]},
+            {"name": "Number", "index": 1, "fields": [{"type": "u64"}]}
+          ]
+        },
+        "value": {"Text": "hello"},
+        "bcs_hex": "000568656c6c6f"
+      },
+      {
+        "name": "newtype_variant_1",
+        "definition": "same as above",
+        "value": {"Number": "42"},
+        "bcs_hex": "012a00000000000000"
+      },
+      {
+        "name": "struct_variant",
+        "definition": {
+          "name": "Event",
+          "variants": [
+            {"name": "Click", "index": 0, "fields": [{"name": "x", "type": "i32"}, {"name": "y", "type": "i32"}]},
+            {"name": "KeyPress", "index": 1, "fields": [{"name": "code", "type": "u8"}]}
+          ]
+        },
+        "value": {"Click": {"x": 100, "y": -50}},
+        "bcs_hex": "0064000000ceffffff"
+      },
+      {
+        "name": "variant_index_128",
+        "definition": {
+          "name": "LargeEnum",
+          "note": "Enum with 200 variants, testing ULEB128 index"
+        },
+        "value": {"Variant128": null},
+        "variant_index": 128,
+        "bcs_hex": "8001",
+        "note": "128 requires 2-byte ULEB128"
+      }
+    ],
+    "invalid": [
+      {
+        "name": "unknown_variant",
+        "definition": {
+          "name": "TwoVariants",
+          "variants": [
+            {"name": "A", "index": 0, "fields": []},
+            {"name": "B", "index": 1, "fields": []}
+          ]
+        },
+        "bcs_hex": "02",
+        "error": "UnknownVariant"
+      }
+    ]
+  },
+
+  "maps": {
+    "description": "Maps are serialized as sorted key-value pairs",
+    "valid": [
+      {
+        "name": "empty",
+        "key_type": "string",
+        "value_type": "u64",
+        "value": {},
+        "bcs_hex": "00"
+      },
+      {
+        "name": "single_entry",
+        "key_type": "string",
+        "value_type": "u64",
+        "value": {"a": "1"},
+        "bcs_hex": "0101610100000000000000"
+      },
+      {
+        "name": "sorted_entries",
+        "key_type": "u8",
+        "value_type": "u8",
+        "value": {"1": "10", "2": "20", "3": "30"},
+        "sorted_pairs": [[1, 10], [2, 20], [3, 30]],
+        "bcs_hex": "03010a02140328"
+      },
+      {
+        "name": "string_keys_sorted",
+        "key_type": "string",
+        "value_type": "u64",
+        "value": {"cherry": "3", "apple": "1", "banana": "2"},
+        "sorted_order": ["apple", "banana", "cherry"],
+        "note": "keys sorted by BCS bytes: apple < banana < cherry"
+      }
+    ],
+    "invalid": [
+      {
+        "name": "unsorted_keys",
+        "key_type": "u8",
+        "value_type": "u8",
+        "bcs_hex": "0302140110",
+        "error": "NonCanonicalMap",
+        "note": "keys [2, 1] are not sorted"
+      },
+      {
+        "name": "duplicate_keys",
+        "key_type": "u8",
+        "value_type": "u8",
+        "bcs_hex": "0201100110",
+        "error": "NonCanonicalMap",
+        "note": "key 1 appears twice"
+      }
+    ]
+  },
+
+  "edge_cases": {
+    "remaining_input": {
+      "description": "Deserialization should fail if bytes remain after parsing",
+      "examples": [
+        {
+          "name": "extra_byte_after_bool",
+          "type": "bool",
+          "bcs_hex": "0100",
+          "error": "RemainingInput"
+        },
+        {
+          "name": "extra_bytes_after_u64",
+          "type": "u64",
+          "bcs_hex": "01000000000000000000",
+          "error": "RemainingInput"
+        }
+      ]
+    },
+
+    "container_depth": {
+      "description": "MAX_CONTAINER_DEPTH = 500",
+      "note": "Only structs and enums increase depth, not vectors/options",
+      "examples": [
+        {
+          "name": "depth_1",
+          "structure": "struct { x: u64 }",
+          "depth": 1,
+          "valid": true
+        },
+        {
+          "name": "depth_500",
+          "structure": "500 nested structs",
+          "depth": 500,
+          "valid": false,
+          "error": "ExceededContainerDepth"
+        }
+      ]
+    },
+
+    "max_sequence_length": {
+      "description": "MAX_SEQUENCE_LENGTH = 2^31 - 1 = 2147483647",
+      "examples": [
+        {
+          "name": "at_limit",
+          "length": 2147483647,
+          "valid": true,
+          "note": "theoretically valid but would require 2GB+ memory"
+        },
+        {
+          "name": "exceeds_limit",
+          "length": 2147483648,
+          "valid": false,
+          "error": "ExceededMaxLength"
+        }
+      ]
+    }
+  },
+
+  "cross_language_compatibility": {
+    "description": "Test vectors for verifying cross-language serialization compatibility",
+    "test_struct": {
+      "name": "TestStruct",
+      "fields": [
+        {"name": "bool_field", "type": "bool"},
+        {"name": "u8_field", "type": "u8"},
+        {"name": "u16_field", "type": "u16"},
+        {"name": "u32_field", "type": "u32"},
+        {"name": "u64_field", "type": "u64"},
+        {"name": "u128_field", "type": "u128"},
+        {"name": "string_field", "type": "string"},
+        {"name": "bytes_field", "type": "vector<u8>"},
+        {"name": "optional_field", "type": "option<u64>"},
+        {"name": "vector_field", "type": "vector<u16>"}
+      ]
+    },
+    "test_values": [
+      {
+        "name": "all_zeros",
+        "value": {
+          "bool_field": false,
+          "u8_field": 0,
+          "u16_field": 0,
+          "u32_field": 0,
+          "u64_field": "0",
+          "u128_field": "0",
+          "string_field": "",
+          "bytes_field": [],
+          "optional_field": null,
+          "vector_field": []
+        },
+        "bcs_hex": "00000000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "name": "typical_values",
+        "value": {
+          "bool_field": true,
+          "u8_field": 42,
+          "u16_field": 1000,
+          "u32_field": 100000,
+          "u64_field": "1000000000",
+          "u128_field": "1000000000000000000",
+          "string_field": "hello",
+          "bytes_field": [1, 2, 3],
+          "optional_field": {"some": "999"},
+          "vector_field": [1, 2, 3]
+        },
+        "bcs_hex": "012ae803a086010000ca9a3b00000000000064a7b3b6e00d000000000000000000000568656c6c6f03010203010e70300000000000000301000200030000"
+      }
+    ]
+  }
+}

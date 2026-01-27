@@ -1,0 +1,11 @@
+name: bcs
+description: Binary Canonical Serialization (BCS) - A deterministic binary serialization format for Dart.
+version: 0.1.0
+repository: https://github.com/bcs-sdks/bcs-sdks/tree/main/sdks/dart
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^6.0.0

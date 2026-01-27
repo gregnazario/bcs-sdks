@@ -1,0 +1,21 @@
+# Maven
+target/
+
+# IDE
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+*.swp
+*~
+
+# Build tools
+google-java-format-*.jar
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

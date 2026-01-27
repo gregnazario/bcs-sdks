@@ -1,0 +1,10 @@
+[package]
+name = "bcs-e2e-reference"
+version = "0.1.0"
+edition = "2021"
+description = "Reference BCS test vector generator"
+
+[dependencies]
+bcs = { path = "../../sdks/rust" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

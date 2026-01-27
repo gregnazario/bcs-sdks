@@ -1,0 +1,10 @@
+# Generated test data
+test-data/
+
+# Rust build artifacts
+reference/target/
+
+# Compiled runners
+runners/*.exe
+runners/cpp_runner
+runners/c_runner

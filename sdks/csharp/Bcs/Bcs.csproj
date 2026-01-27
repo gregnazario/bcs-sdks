@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>14.0</LangVersion>
+    
+    <!-- Package metadata -->
+    <PackageId>Bcs</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>BCS SDK Authors</Authors>
+    <Description>Binary Canonical Serialization (BCS) for .NET - A deterministic binary serialization format used by Aptos, Sui, and other blockchain systems.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/bcs-sdks/bcs-sdks</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/bcs-sdks/bcs-sdks</RepositoryUrl>
+    <PackageTags>bcs;serialization;binary;canonical;aptos;sui;blockchain</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    
+    <!-- Build settings -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningLevel>7</WarningLevel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

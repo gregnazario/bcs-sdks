@@ -1,0 +1,13 @@
+.{
+    .name = .bcs,
+    .version = "0.1.0",
+    .fingerprint = 0x33cedebe912c5fd9,
+    .minimum_zig_version = "0.13.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+    },
+}

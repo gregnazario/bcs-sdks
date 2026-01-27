@@ -1,0 +1,525 @@
+package com.bcs;
+
+import java.io.ByteArrayOutputStream;
+import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.function.BiConsumer;
+
+/**
+ * BCS Serializer - Manual serialization API.
+ *
+ * <p>Provides explicit methods for serializing each BCS type.
+ * Use this for full control over serialization.</p>
+ *
+ * <pre>{@code
+ * BcsSerializer ser = new BcsSerializer();
+ * ser.writeU8((short) 1);
+ * ser.writeU64(100L);
+ * ser.writeString("hello");
+ * byte[] bytes = ser.toBytes();
+ * }</pre>
+ */
+public class BcsSerializer {
+
+    /** Maximum allowed sequence length. */
+    public static final int MAX_SEQUENCE_LENGTH = Integer.MAX_VALUE; // 2^31 - 1
+
+    /** Maximum allowed container nesting depth. */
+    public static final int MAX_CONTAINER_DEPTH = 500;
+
+    // Integer bounds
+    private static final BigInteger U128_MAX = BigInteger.ONE.shiftLeft(128).subtract(BigInteger.ONE);
+    private static final BigInteger U256_MAX = BigInteger.ONE.shiftLeft(256).subtract(BigInteger.ONE);
+    private static final BigInteger I128_MIN = BigInteger.ONE.shiftLeft(127).negate();
+    private static final BigInteger I128_MAX = BigInteger.ONE.shiftLeft(127).subtract(BigInteger.ONE);
+    private static final BigInteger I256_MIN = BigInteger.ONE.shiftLeft(255).negate();
+    private static final BigInteger I256_MAX = BigInteger.ONE.shiftLeft(255).subtract(BigInteger.ONE);
+
+    private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+    private int currentDepth = 0;
+
+    // ==========================================================================
+    // BOOLEAN
+    // ==========================================================================
+
+    /**
+     * Serialize a boolean value.
+     *
+     * @param value the boolean to serialize
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeBool(boolean value) {
+        buffer.write(value ? 1 : 0);
+        return this;
+    }
+
+    // ==========================================================================
+    // UNSIGNED INTEGERS
+    // ==========================================================================
+
+    /**
+     * Serialize an unsigned 8-bit integer.
+     *
+     * @param value the value (0-255)
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeU8(short value) {
+        if (value < 0 || value > 255) {
+            throw BcsError.valueOutOfRange("u8", value);
+        }
+        buffer.write(value);
+        return this;
+    }
+
+    /**
+     * Serialize an unsigned 16-bit integer (little-endian).
+     *
+     * @param value the value (0-65535)
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeU16(int value) {
+        if (value < 0 || value > 0xFFFF) {
+            throw BcsError.valueOutOfRange("u16", value);
+        }
+        buffer.write(value & 0xFF);
+        buffer.write((value >> 8) & 0xFF);
+        return this;
+    }
+
+    /**
+     * Serialize an unsigned 32-bit integer (little-endian).
+     *
+     * @param value the value (0 to 2^32-1)
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeU32(long value) {
+        if (value < 0 || value > 0xFFFFFFFFL) {
+            throw BcsError.valueOutOfRange("u32", value);
+        }
+        buffer.write((int) (value & 0xFF));
+        buffer.write((int) ((value >> 8) & 0xFF));
+        buffer.write((int) ((value >> 16) & 0xFF));
+        buffer.write((int) ((value >> 24) & 0xFF));
+        return this;
+    }
+
+    /**
+     * Serialize an unsigned 64-bit integer (little-endian).
+     *
+     * @param value the value (0 to 2^64-1, stored as long treating as unsigned)
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeU64(long value) {
+        writeLittleEndian(value, 8);
+        return this;
+    }
+
+    /**
+     * Serialize an unsigned 128-bit integer (little-endian).
+     *
+     * @param value the value (0 to 2^128-1)
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeU128(BigInteger value) {
+        if (value.signum() < 0 || value.compareTo(U128_MAX) > 0) {
+            throw BcsError.valueOutOfRange("u128", value);
+        }
+        writeBigIntegerLE(value, 16);
+        return this;
+    }
+
+    /**
+     * Serialize an unsigned 256-bit integer (little-endian).
+     *
+     * @param value the value (0 to 2^256-1)
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeU256(BigInteger value) {
+        if (value.signum() < 0 || value.compareTo(U256_MAX) > 0) {
+            throw BcsError.valueOutOfRange("u256", value);
+        }
+        writeBigIntegerLE(value, 32);
+        return this;
+    }
+
+    // ==========================================================================
+    // SIGNED INTEGERS
+    // ==========================================================================
+
+    /**
+     * Serialize a signed 8-bit integer (two's complement).
+     *
+     * @param value the value (-128 to 127)
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeI8(byte value) {
+        buffer.write(value);
+        return this;
+    }
+
+    /**
+     * Serialize a signed 16-bit integer (two's complement, little-endian).
+     *
+     * @param value the value (-32768 to 32767)
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeI16(short value) {
+        buffer.write(value & 0xFF);
+        buffer.write((value >> 8) & 0xFF);
+        return this;
+    }
+
+    /**
+     * Serialize a signed 32-bit integer (two's complement, little-endian).
+     *
+     * @param value the value
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeI32(int value) {
+        buffer.write(value & 0xFF);
+        buffer.write((value >> 8) & 0xFF);
+        buffer.write((value >> 16) & 0xFF);
+        buffer.write((value >> 24) & 0xFF);
+        return this;
+    }
+
+    /**
+     * Serialize a signed 64-bit integer (two's complement, little-endian).
+     *
+     * @param value the value
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeI64(long value) {
+        writeLittleEndian(value, 8);
+        return this;
+    }
+
+    /**
+     * Serialize a signed 128-bit integer (two's complement, little-endian).
+     *
+     * @param value the value
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeI128(BigInteger value) {
+        if (value.compareTo(I128_MIN) < 0 || value.compareTo(I128_MAX) > 0) {
+            throw BcsError.valueOutOfRange("i128", value);
+        }
+        BigInteger unsigned = value.signum() < 0 ? value.add(BigInteger.ONE.shiftLeft(128)) : value;
+        writeBigIntegerLE(unsigned, 16);
+        return this;
+    }
+
+    /**
+     * Serialize a signed 256-bit integer (two's complement, little-endian).
+     *
+     * @param value the value
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeI256(BigInteger value) {
+        if (value.compareTo(I256_MIN) < 0 || value.compareTo(I256_MAX) > 0) {
+            throw BcsError.valueOutOfRange("i256", value);
+        }
+        BigInteger unsigned = value.signum() < 0 ? value.add(BigInteger.ONE.shiftLeft(256)) : value;
+        writeBigIntegerLE(unsigned, 32);
+        return this;
+    }
+
+    // ==========================================================================
+    // ULEB128
+    // ==========================================================================
+
+    /**
+     * Serialize a ULEB128-encoded unsigned integer.
+     *
+     * @param value the value (0 to 2^32-1)
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeUleb128(long value) {
+        byte[] encoded = Uleb128.encode(value);
+        buffer.write(encoded, 0, encoded.length);
+        return this;
+    }
+
+    // ==========================================================================
+    // BYTES AND STRINGS
+    // ==========================================================================
+
+    /**
+     * Serialize a byte array (length-prefixed with ULEB128).
+     *
+     * @param value the bytes to serialize
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeBytes(byte[] value) {
+        if (value.length > MAX_SEQUENCE_LENGTH) {
+            throw BcsError.exceededMaxLength(value.length);
+        }
+        writeUleb128(value.length);
+        buffer.write(value, 0, value.length);
+        return this;
+    }
+
+    /**
+     * Serialize a UTF-8 string (length-prefixed with ULEB128).
+     *
+     * @param value the string to serialize
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeString(String value) {
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        return writeBytes(bytes);
+    }
+
+    /**
+     * Serialize fixed-length bytes (no length prefix).
+     *
+     * @param value the bytes to serialize
+     * @param length the expected length
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeFixedBytes(byte[] value, int length) {
+        if (value.length != length) {
+            throw new IllegalArgumentException(
+                    String.format("Expected %d bytes, got %d", length, value.length));
+        }
+        buffer.write(value, 0, value.length);
+        return this;
+    }
+
+    // ==========================================================================
+    // OPTION
+    // ==========================================================================
+
+    /**
+     * Serialize an optional value.
+     *
+     * @param value the value or null
+     * @param serializer function to serialize the inner value
+     * @param <T> the type of the optional value
+     * @return this serializer for chaining
+     */
+    public <T> BcsSerializer writeOption(T value, BiConsumer<BcsSerializer, T> serializer) {
+        if (value == null) {
+            buffer.write(0);
+        } else {
+            buffer.write(1);
+            serializer.accept(this, value);
+        }
+        return this;
+    }
+
+    // ==========================================================================
+    // VECTOR
+    // ==========================================================================
+
+    /**
+     * Serialize a vector of values.
+     *
+     * @param values the list of values
+     * @param serializer function to serialize each element
+     * @param <T> the type of vector elements
+     * @return this serializer for chaining
+     */
+    public <T> BcsSerializer writeVector(List<T> values, BiConsumer<BcsSerializer, T> serializer) {
+        if (values.size() > MAX_SEQUENCE_LENGTH) {
+            throw BcsError.exceededMaxLength(values.size());
+        }
+        writeUleb128(values.size());
+        for (T value : values) {
+            serializer.accept(this, value);
+        }
+        return this;
+    }
+
+    // ==========================================================================
+    // ENUM
+    // ==========================================================================
+
+    /**
+     * Enter an enum container and write its variant index (ULEB128).
+     *
+     * @param index the variant index
+     * @return this serializer for chaining
+     */
+    public BcsSerializer enterEnum(int index) {
+        enterContainer("enum");
+        writeUleb128(index);
+        return this;
+    }
+
+    /**
+     * Leave the current enum container.
+     *
+     * @return this serializer for chaining
+     */
+    public BcsSerializer leaveEnum() {
+        leaveContainer();
+        return this;
+    }
+
+    /**
+     * Write an enum variant index (ULEB128).
+     *
+     * @param index the variant index
+     * @return this serializer for chaining
+     */
+    public BcsSerializer writeVariantIndex(int index) {
+        return enterEnum(index);
+    }
+
+    // ==========================================================================
+    // MAP
+    // ==========================================================================
+
+    /**
+     * Serialize a map (sorted by key bytes).
+     *
+     * @param entries the map entries
+     * @param keySerializer function to serialize keys
+     * @param valueSerializer function to serialize values
+     * @param <K> the key type
+     * @param <V> the value type
+     * @return this serializer for chaining
+     */
+    public <K, V> BcsSerializer writeMap(
+            Map<K, V> entries,
+            BiConsumer<BcsSerializer, K> keySerializer,
+            BiConsumer<BcsSerializer, V> valueSerializer) {
+
+        if (entries.size() > MAX_SEQUENCE_LENGTH) {
+            throw BcsError.exceededMaxLength(entries.size());
+        }
+
+        // Serialize keys to get bytes for sorting
+        record KeyEntry<K, V>(byte[] keyBytes, K key, V value) {}
+
+        @SuppressWarnings("unchecked")
+        KeyEntry<K, V>[] keyEntries = entries.entrySet().stream()
+                .map(e -> {
+                    BcsSerializer keySer = new BcsSerializer();
+                    keySerializer.accept(keySer, e.getKey());
+                    return new KeyEntry<>(keySer.toBytes(), e.getKey(), e.getValue());
+                })
+                .toArray(KeyEntry[]::new);
+
+        // Sort by key bytes
+        Arrays.sort(keyEntries, (a, b) -> compareBytes(a.keyBytes, b.keyBytes));
+
+        // Write length and sorted entries
+        writeUleb128(keyEntries.length);
+        for (KeyEntry<K, V> entry : keyEntries) {
+            buffer.write(entry.keyBytes, 0, entry.keyBytes.length);
+            valueSerializer.accept(this, entry.value);
+        }
+
+        return this;
+    }
+
+    // ==========================================================================
+    // UTILITY
+    // ==========================================================================
+
+    /**
+     * Get the serialized bytes.
+     *
+     * @return the serialized byte array
+     */
+    public byte[] toBytes() {
+        return buffer.toByteArray();
+    }
+
+    /**
+     * Get the current length in bytes.
+     *
+     * @return the number of bytes written
+     */
+    public int length() {
+        return buffer.size();
+    }
+
+    // ==========================================================================
+    // CONTAINER DEPTH
+    // ==========================================================================
+
+    /**
+     * Enter a struct container for depth tracking.
+     *
+     * @return this serializer for chaining
+     */
+    public BcsSerializer enterStruct() {
+        return enterStruct("");
+    }
+
+    /**
+     * Enter a struct container for depth tracking.
+     *
+     * @param name optional struct name for error messages
+     * @return this serializer for chaining
+     */
+    public BcsSerializer enterStruct(String name) {
+        enterContainer(name);
+        return this;
+    }
+
+    /**
+     * Leave the current struct container.
+     *
+     * @return this serializer for chaining
+     */
+    public BcsSerializer leaveStruct() {
+        leaveContainer();
+        return this;
+    }
+
+    // ==========================================================================
+    // PRIVATE HELPERS
+    // ==========================================================================
+
+    private void writeLittleEndian(long value, int byteLength) {
+        for (int i = 0; i < byteLength; i++) {
+            buffer.write((int) (value & 0xFF));
+            value >>>= 8;
+        }
+    }
+
+    private void writeBigIntegerLE(BigInteger value, int byteLength) {
+        byte[] bytes = value.toByteArray();
+        // BigInteger uses big-endian, we need little-endian
+        // Also need to handle sign extension bytes
+        for (int i = 0; i < byteLength; i++) {
+            int srcIndex = bytes.length - 1 - i;
+            if (srcIndex >= 0) {
+                buffer.write(bytes[srcIndex]);
+            } else {
+                buffer.write(0);
+            }
+        }
+    }
+
+    private void enterContainer(String container) {
+        if (currentDepth >= MAX_CONTAINER_DEPTH) {
+            throw BcsError.exceededContainerDepth(container);
+        }
+        currentDepth++;
+    }
+
+    private void leaveContainer() {
+        if (currentDepth > 0) {
+            currentDepth--;
+        }
+    }
+
+    private static int compareBytes(byte[] a, byte[] b) {
+        int minLen = Math.min(a.length, b.length);
+        for (int i = 0; i < minLen; i++) {
+            int cmp = (a[i] & 0xFF) - (b[i] & 0xFF);
+            if (cmp != 0) {
+                return cmp;
+            }
+        }
+        return a.length - b.length;
+    }
+}
