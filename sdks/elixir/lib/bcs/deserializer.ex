@@ -21,6 +21,14 @@ defmodule Bcs.Deserializer do
 
   alias Bcs.{Error, Uleb128}
 
+  # Compile-time optimizations for hot path functions
+  @compile {:inline,
+            read_u8: 1,
+            read_u16: 1,
+            read_u32: 1,
+            read_u64: 1,
+            read_bool: 1}
+
   # Constants
   @max_sequence_length (1 <<< 31) - 1
   @max_container_depth 500
@@ -488,6 +496,64 @@ defmodule Bcs.Deserializer do
           {list(), binary()}
   def read_vector!(data, deserializer) do
     case read_vector(data, deserializer) do
+      {:ok, result} -> result
+      {:error, error} -> raise error
+    end
+  end
+
+  @doc """
+  Deserialize a vector of u8 values (optimized).
+
+  Returns bytes as a list of integers for consistency with read_vector.
+
+  ## Examples
+
+      iex> Bcs.Deserializer.read_vector_u8(<<3, 1, 2, 3>>)
+      {:ok, {[1, 2, 3], <<>>}}
+
+  """
+  @spec read_vector_u8(binary()) :: {:ok, {list(non_neg_integer()), binary()}} | {:error, Error.t()}
+  def read_vector_u8(data) do
+    with {:ok, {length, rest}} <- read_uleb128(data) do
+      if length > @max_sequence_length do
+        {:error, Error.exceeded_max_length(length)}
+      else
+        if byte_size(rest) >= length do
+          <<bytes::binary-size(length), remaining::binary>> = rest
+          # Convert binary to list of integers
+          {:ok, {:erlang.binary_to_list(bytes), remaining}}
+        else
+          {:error, Error.unexpected_eof(length, byte_size(rest))}
+        end
+      end
+    end
+  end
+
+  @doc """
+  Deserialize a vector of u8 as raw bytes (optimized).
+
+  Returns bytes as a binary for more efficient processing.
+
+  ## Examples
+
+      iex> Bcs.Deserializer.read_vector_u8_as_binary(<<3, 1, 2, 3>>)
+      {:ok, {<<1, 2, 3>>, <<>>}}
+
+  """
+  @spec read_vector_u8_as_binary(binary()) :: {:ok, {binary(), binary()}} | {:error, Error.t()}
+  def read_vector_u8_as_binary(data) do
+    with {:ok, {length, rest}} <- read_uleb128(data) do
+      if length > @max_sequence_length do
+        {:error, Error.exceeded_max_length(length)}
+      else
+        read_fixed_bytes(rest, length)
+      end
+    end
+  end
+
+  @spec read_vector_u8!(binary()) :: {list(non_neg_integer()), binary()}
+  def read_vector_u8!(data) do
+    case read_vector_u8(data) do
       {:ok, result} -> result
       {:error, error} -> raise error
     end

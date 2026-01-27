@@ -4,6 +4,14 @@ import 'constants.dart';
 import 'errors.dart';
 import 'uleb128.dart';
 
+/// Cached constants for signed integer conversion
+final BigInt _signBit64 = BigInt.one << 63;
+final BigInt _signBit128 = BigInt.one << 127;
+final BigInt _signBit256 = BigInt.one << 255;
+final BigInt _mask64 = BigInt.one << 64;
+final BigInt _mask128 = BigInt.one << 128;
+final BigInt _mask256 = BigInt.one << 256;
+
 /// BCS Deserializer - Manual deserialization API
 class BcsDeserializer {
   /// Creates a deserializer from a Uint8List.
@@ -24,15 +32,13 @@ class BcsDeserializer {
 
   /// Read a boolean value
   bool readBool() {
-    final byte = readU8();
-    switch (byte) {
-      case 0:
-        return false;
-      case 1:
-        return true;
-      default:
-        throw BcsError.invalidBoolean(byte);
+    if (_offset >= _data.length) {
+      throw BcsError.unexpectedEof();
     }
+    final byte = _data[_offset++];
+    if (byte == 0) return false;
+    if (byte == 1) return true;
+    throw BcsError.invalidBoolean(byte);
   }
 
   // ==========================================================================
@@ -41,13 +47,17 @@ class BcsDeserializer {
 
   /// Read an unsigned 8-bit integer
   int readU8() {
-    _checkRemaining(1);
+    if (_offset >= _data.length) {
+      throw BcsError.unexpectedEof();
+    }
     return _data[_offset++];
   }
 
   /// Read an unsigned 16-bit integer (little-endian)
   int readU16() {
-    _checkRemaining(2);
+    if (_offset + 2 > _data.length) {
+      throw BcsError.unexpectedEof();
+    }
     final value = _data[_offset] | (_data[_offset + 1] << 8);
     _offset += 2;
     return value;
@@ -55,31 +65,39 @@ class BcsDeserializer {
 
   /// Read an unsigned 32-bit integer (little-endian)
   int readU32() {
-    _checkRemaining(4);
-    var value = 0;
-    for (var i = 0; i < 4; i++) {
-      value |= _data[_offset + i] << (i * 8);
+    if (_offset + 4 > _data.length) {
+      throw BcsError.unexpectedEof();
     }
+    // Unrolled for performance
+    final value = _data[_offset] |
+        (_data[_offset + 1] << 8) |
+        (_data[_offset + 2] << 16) |
+        (_data[_offset + 3] << 24);
     _offset += 4;
     return value;
   }
 
   /// Read an unsigned 64-bit integer (little-endian)
   BigInt readU64() {
-    _checkRemaining(8);
-    final value = _readBigIntLE(8);
-    return value;
+    if (_offset + 8 > _data.length) {
+      throw BcsError.unexpectedEof();
+    }
+    return _readBigIntLE(8);
   }
 
   /// Read an unsigned 128-bit integer (little-endian)
   BigInt readU128() {
-    _checkRemaining(16);
+    if (_offset + 16 > _data.length) {
+      throw BcsError.unexpectedEof();
+    }
     return _readBigIntLE(16);
   }
 
   /// Read an unsigned 256-bit integer (little-endian)
   BigInt readU256() {
-    _checkRemaining(32);
+    if (_offset + 32 > _data.length) {
+      throw BcsError.unexpectedEof();
+    }
     return _readBigIntLE(32);
   }
 
@@ -108,31 +126,19 @@ class BcsDeserializer {
   /// Read a signed 64-bit integer (little-endian)
   BigInt readI64() {
     final value = readU64();
-    final signBit = BigInt.one << 63;
-    if (value >= signBit) {
-      return value - (BigInt.one << 64);
-    }
-    return value;
+    return value >= _signBit64 ? value - _mask64 : value;
   }
 
   /// Read a signed 128-bit integer (little-endian)
   BigInt readI128() {
     final value = readU128();
-    final signBit = BigInt.one << 127;
-    if (value >= signBit) {
-      return value - (BigInt.one << 128);
-    }
-    return value;
+    return value >= _signBit128 ? value - _mask128 : value;
   }
 
   /// Read a signed 256-bit integer (little-endian)
   BigInt readI256() {
     final value = readU256();
-    final signBit = BigInt.one << 255;
-    if (value >= signBit) {
-      return value - (BigInt.one << 256);
-    }
-    return value;
+    return value >= _signBit256 ? value - _mask256 : value;
   }
 
   // ==========================================================================
@@ -152,7 +158,9 @@ class BcsDeserializer {
 
   /// Read fixed-length bytes (without length prefix)
   Uint8List readFixedBytes(int length) {
-    _checkRemaining(length);
+    if (_offset + length > _data.length) {
+      throw BcsError.unexpectedEof();
+    }
     final result = Uint8List.sublistView(_data, _offset, _offset + length);
     _offset += length;
     return result;
@@ -167,9 +175,19 @@ class BcsDeserializer {
 
   /// Read a UTF-8 string with ULEB128 length prefix
   String readString() {
-    final bytes = readBytes();
+    final length = readUleb128();
+    _checkSequenceLength(length);
+    if (_offset + length > _data.length) {
+      throw BcsError.unexpectedEof();
+    }
+    // Decode directly from subview to avoid copy
     try {
-      return utf8.decode(bytes, allowMalformed: false);
+      final str = utf8.decode(
+        Uint8List.sublistView(_data, _offset, _offset + length),
+        allowMalformed: false,
+      );
+      _offset += length;
+      return str;
     } on FormatException {
       throw BcsError.invalidUtf8();
     }
@@ -295,12 +313,6 @@ class BcsDeserializer {
   // PRIVATE HELPERS
   // ==========================================================================
 
-  void _checkRemaining(int needed) {
-    if (_offset + needed > _data.length) {
-      throw BcsError.unexpectedEof();
-    }
-  }
-
   void _checkSequenceLength(int length) {
     if (length > maxSequenceLength) {
       throw BcsError.exceededMaxLength(length, maxSequenceLength);
@@ -320,10 +332,12 @@ class BcsDeserializer {
     }
   }
 
+  /// Optimized BigInt read - builds value from bytes
   BigInt _readBigIntLE(int byteLength) {
     var value = BigInt.zero;
-    for (var i = 0; i < byteLength; i++) {
-      value |= BigInt.from(_data[_offset + i]) << (i * 8);
+    // Process in chunks for better performance with large integers
+    for (var i = byteLength - 1; i >= 0; i--) {
+      value = (value << 8) | BigInt.from(_data[_offset + i]);
     }
     _offset += byteLength;
     return value;

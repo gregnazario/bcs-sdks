@@ -3,25 +3,40 @@ package bcs
 // MaxU32 is the maximum value for ULEB128 encoding.
 const MaxU32 = 0xFFFFFFFF
 
+// maxULEB128Bytes is the maximum number of bytes needed to encode a u32 in ULEB128.
+const maxULEB128Bytes = 5
+
 // EncodeULEB128 encodes an unsigned integer as ULEB128.
+// Uses a stack-allocated array to avoid heap allocation.
 func EncodeULEB128(value uint32) []byte {
+	var buf [maxULEB128Bytes]byte
+	n := encodeULEB128Into(buf[:], value)
+	// Return a copy to avoid returning a slice of a stack array
+	result := make([]byte, n)
+	copy(result, buf[:n])
+	return result
+}
+
+// encodeULEB128Into writes the ULEB128 encoding of value into buf.
+// Returns the number of bytes written. buf must have at least 5 bytes capacity.
+func encodeULEB128Into(buf []byte, value uint32) int {
 	if value == 0 {
-		return []byte{0}
+		buf[0] = 0
+		return 1
 	}
 
-	var result []byte
+	i := 0
 	remaining := value
-
 	for remaining > 0 {
 		b := byte(remaining & 0x7F)
 		remaining >>= 7
 		if remaining != 0 {
 			b |= 0x80
 		}
-		result = append(result, b)
+		buf[i] = b
+		i++
 	}
-
-	return result
+	return i
 }
 
 // DecodeULEB128 decodes a ULEB128 value from a byte slice.

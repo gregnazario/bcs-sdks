@@ -1,6 +1,6 @@
 # BCS E2E Roundtrip Tests Makefile
 
-.PHONY: all test generate clean help
+.PHONY: all test generate clean help benchmark report
 .PHONY: test-python test-typescript test-go test-elixir test-rust test-ruby
 
 # Default target
@@ -11,6 +11,8 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  make test           - Run all e2e tests"
+	@echo "  make benchmark      - Run correctness tests and benchmarks"
+	@echo "  make report         - Generate benchmark report (BENCHMARK_REPORT.md)"
 	@echo "  make generate       - Generate reference test vectors"
 	@echo "  make clean          - Clean generated files"
 	@echo ""
@@ -112,3 +114,41 @@ clean:
 # Build reference generator only
 build-reference:
 	@cd reference && cargo build --release
+
+# Run benchmarks (correctness + performance)
+benchmark: test-data generate
+	@echo "Running benchmarks..."
+	@python3 benchmark_orchestrator.py -v
+	@echo "Benchmark results saved to test-data/benchmark_results.json"
+
+# Run benchmarks for specific language
+benchmark-python: test-data generate
+	@echo "Benchmarking Python SDK..."
+	@python3 benchmark_orchestrator.py -l python -v
+
+benchmark-go: test-data generate
+	@echo "Benchmarking Go SDK..."
+	@python3 benchmark_orchestrator.py -l go -v
+
+benchmark-rust: test-data generate
+	@echo "Benchmarking Rust SDK..."
+	@python3 benchmark_orchestrator.py -l rust -v
+
+benchmark-typescript: test-data generate
+	@echo "Benchmarking TypeScript SDK..."
+	@python3 benchmark_orchestrator.py -l typescript -v
+
+# Generate markdown report from benchmark results
+report: test-data
+	@echo "Generating benchmark report..."
+	@python3 generate_report.py
+	@echo "Report generated: ../BENCHMARK_REPORT.md"
+
+# Run full benchmark suite and generate report
+benchmark-report: benchmark report
+	@echo "Full benchmark and report complete!"
+
+# Correctness tests only (no benchmarks)
+correctness: generate
+	@echo "Running correctness tests only..."
+	@python3 benchmark_orchestrator.py --correctness-only -v

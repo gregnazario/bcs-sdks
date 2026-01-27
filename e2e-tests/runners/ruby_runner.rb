@@ -3,8 +3,14 @@
 #
 # Reads test vectors from stdin, performs roundtrip serialization,
 # and outputs results to stdout.
+#
+# Supports two modes:
+# - Default: Roundtrip testing for correctness
+# - Benchmark (--benchmark): Performance timing
 
 require 'json'
+
+BENCHMARK_MODE = ARGV.include?('--benchmark')
 
 # Add the SDK to the load path
 sdk_path = File.expand_path('../../sdks/ruby/lib', __dir__)
@@ -360,20 +366,200 @@ def roundtrip(type, data, test_case)
   end
 end
 
+# Benchmark support
+def compute_stats(times)
+  return { avg: 0, min: 0, max: 0, p50: 0, p95: 0 } if times.empty?
+  sorted = times.sort
+  n = sorted.length
+  {
+    avg: times.sum.to_f / n,
+    min: sorted.first,
+    max: sorted.last,
+    p50: sorted[n / 2],
+    p95: sorted[(n * 0.95).to_i]
+  }
+end
+
+def generate_value(bc)
+  return bc['value'] if bc.key?('value')
+  length = bc['length'] || 10
+  case bc['value_generator']
+  when 'repeat_char'
+    (bc['char'] || 'a') * length
+  when 'sequential_bytes', 'sequential_u8'
+    (0...length).map { |i| i % 256 }
+  when 'sequential_u64'
+    (0...length).map(&:to_s)
+  when 'address_bytes'
+    [0] * 31 + [1]
+  else
+    bc['value']
+  end
+end
+
+def serialize_value(s, type, value)
+  case type
+  when 'bool' then s.write_bool(value)
+  when 'u8' then s.write_u8(value)
+  when 'u16' then s.write_u16(value)
+  when 'u32' then s.write_u32(value)
+  when 'u64' then s.write_u64(value.to_i)
+  when 'u128' then s.write_u128(value.to_i)
+  when 'i8' then s.write_i8(value)
+  when 'i16' then s.write_i16(value)
+  when 'i32' then s.write_i32(value)
+  when 'i64' then s.write_i64(value.to_i)
+  when 'i128' then s.write_i128(value.to_i)
+  when 'string' then s.write_string(value)
+  when 'bytes' then s.write_bytes(value.pack('C*'))
+  when 'fixed_bytes' then s.write_fixed_bytes(value.pack('C*'))
+  when 'vector<u8>'
+    s.write_uleb128(value.length)
+    value.each { |v| s.write_u8(v) }
+  when 'vector<u64>'
+    s.write_uleb128(value.length)
+    value.each { |v| s.write_u64(v.to_i) }
+  when 'vector<string>'
+    s.write_uleb128(value.length)
+    value.each { |v| s.write_string(v) }
+  else
+    raise "Unknown type: #{type}"
+  end
+end
+
+def deserialize_value(d, type)
+  case type
+  when 'bool' then d.read_bool
+  when 'u8' then d.read_u8
+  when 'u16' then d.read_u16
+  when 'u32' then d.read_u32
+  when 'u64' then d.read_u64
+  when 'u128' then d.read_u128
+  when 'i8' then d.read_i8
+  when 'i16' then d.read_i16
+  when 'i32' then d.read_i32
+  when 'i64' then d.read_i64
+  when 'i128' then d.read_i128
+  when 'string' then d.read_string
+  when 'bytes' then d.read_bytes
+  when 'fixed_bytes' then d.read_fixed_bytes(32)
+  when 'vector<u8>'
+    length = d.read_uleb128
+    length.times.map { d.read_u8 }
+  when 'vector<u64>'
+    length = d.read_uleb128
+    length.times.map { d.read_u64 }
+  when 'vector<string>'
+    length = d.read_uleb128
+    length.times.map { d.read_string }
+  else
+    raise "Unknown type: #{type}"
+  end
+end
+
+def run_benchmark(spec)
+  default_iterations = spec.dig('config', 'default_iterations') || 1000
+  warmup = spec.dig('config', 'warmup_iterations') || 10
+  results = []
+
+  (spec['scenarios'] || {}).each do |_category, group|
+    (group['benchmarks'] || []).each do |bc|
+      iterations = bc['iterations'] || default_iterations
+      begin
+        value = generate_value(bc)
+        raise "Could not generate value" if value.nil?
+
+        # Get serialized bytes
+        s = BCS::Serializer.new
+        serialize_value(s, bc['type'], value)
+        bcs_bytes = s.to_bytes.pack('C*')
+
+        # Warmup serialize
+        warmup.times do
+          ws = BCS::Serializer.new
+          serialize_value(ws, bc['type'], value)
+          ws.to_bytes
+        end
+
+        # Benchmark serialize
+        ser_times = iterations.times.map do
+          start = Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)
+          bs = BCS::Serializer.new
+          serialize_value(bs, bc['type'], value)
+          bs.to_bytes
+          Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond) - start
+        end
+
+        # Warmup deserialize
+        warmup.times do
+          wd = BCS::Deserializer.new(bcs_bytes)
+          deserialize_value(wd, bc['type'])
+        end
+
+        # Benchmark deserialize
+        de_times = iterations.times.map do
+          start = Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)
+          bd = BCS::Deserializer.new(bcs_bytes)
+          deserialize_value(bd, bc['type'])
+          Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond) - start
+        end
+
+        ser_stats = compute_stats(ser_times)
+        de_stats = compute_stats(de_times)
+
+        results << {
+          'name' => bc['name'],
+          'type' => bc['type'],
+          'iterations' => iterations,
+          'serialize_avg_ns' => ser_stats[:avg],
+          'serialize_min_ns' => ser_stats[:min],
+          'serialize_max_ns' => ser_stats[:max],
+          'serialize_p50_ns' => ser_stats[:p50],
+          'serialize_p95_ns' => ser_stats[:p95],
+          'deserialize_avg_ns' => de_stats[:avg],
+          'deserialize_min_ns' => de_stats[:min],
+          'deserialize_max_ns' => de_stats[:max],
+          'deserialize_p50_ns' => de_stats[:p50],
+          'deserialize_p95_ns' => de_stats[:p95],
+          'throughput_serialize_ops_sec' => ser_stats[:avg] > 0 ? 1_000_000_000.0 / ser_stats[:avg] : 0,
+          'throughput_deserialize_ops_sec' => de_stats[:avg] > 0 ? 1_000_000_000.0 / de_stats[:avg] : 0
+        }
+      rescue => e
+        results << {
+          'name' => bc['name'],
+          'type' => bc['type'],
+          'iterations' => iterations,
+          'error' => e.message
+        }
+      end
+    end
+  end
+
+  {
+    'version' => spec['version'] || '1.0.0',
+    'description' => 'Ruby benchmark results',
+    'benchmarks' => results
+  }
+end
+
 # Main
 input = $stdin.read
-vectors = JSON.parse(input)
+data = JSON.parse(input)
 
-output = {
-  'version' => vectors['version'] || '1.0.0',
-  'description' => 'Ruby roundtrip results',
-  'primitives' => (vectors['primitives'] || []).map { |tc| process_test_case(tc) },
-  'strings' => (vectors['strings'] || []).map { |tc| process_test_case(tc) },
-  'bytes' => (vectors['bytes'] || []).map { |tc| process_test_case(tc) },
-  'options' => (vectors['options'] || []).map { |tc| process_test_case(tc) },
-  'vectors' => (vectors['vectors'] || []).map { |tc| process_test_case(tc) },
-  'structs' => (vectors['structs'] || []).map { |tc| process_test_case(tc) },
-  'complex' => (vectors['complex'] || []).map { |tc| process_test_case(tc) }
-}
+if BENCHMARK_MODE
+  output = run_benchmark(data)
+else
+  output = {
+    'version' => data['version'] || '1.0.0',
+    'description' => 'Ruby roundtrip results',
+    'primitives' => (data['primitives'] || []).map { |tc| process_test_case(tc) },
+    'strings' => (data['strings'] || []).map { |tc| process_test_case(tc) },
+    'bytes' => (data['bytes'] || []).map { |tc| process_test_case(tc) },
+    'options' => (data['options'] || []).map { |tc| process_test_case(tc) },
+    'vectors' => (data['vectors'] || []).map { |tc| process_test_case(tc) },
+    'structs' => (data['structs'] || []).map { |tc| process_test_case(tc) },
+    'complex' => (data['complex'] || []).map { |tc| process_test_case(tc) }
+  }
+end
 
 puts JSON.pretty_generate(output)

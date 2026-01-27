@@ -1,0 +1,385 @@
+{
+  "version": "1.0.0",
+  "description": "BCS benchmark specification for cross-language performance comparison",
+  "config": {
+    "default_iterations": 1000,
+    "warmup_iterations": 10,
+    "timeout_seconds": 60
+  },
+  "scenarios": {
+    "primitives": {
+      "description": "Primitive type serialization/deserialization",
+      "benchmarks": [
+        {
+          "name": "u8",
+          "type": "u8",
+          "value": 255,
+          "iterations": 1000
+        },
+        {
+          "name": "u16",
+          "type": "u16",
+          "value": 65535,
+          "iterations": 1000
+        },
+        {
+          "name": "u32",
+          "type": "u32",
+          "value": 4294967295,
+          "iterations": 1000
+        },
+        {
+          "name": "u64",
+          "type": "u64",
+          "value": "18446744073709551615",
+          "iterations": 1000
+        },
+        {
+          "name": "u128",
+          "type": "u128",
+          "value": "340282366920938463463374607431768211455",
+          "iterations": 1000
+        },
+        {
+          "name": "i8",
+          "type": "i8",
+          "value": -128,
+          "iterations": 1000
+        },
+        {
+          "name": "i16",
+          "type": "i16",
+          "value": -32768,
+          "iterations": 1000
+        },
+        {
+          "name": "i32",
+          "type": "i32",
+          "value": -2147483648,
+          "iterations": 1000
+        },
+        {
+          "name": "i64",
+          "type": "i64",
+          "value": "-9223372036854775808",
+          "iterations": 1000
+        },
+        {
+          "name": "i128",
+          "type": "i128",
+          "value": "-170141183460469231731687303715884105728",
+          "iterations": 1000
+        },
+        {
+          "name": "bool_true",
+          "type": "bool",
+          "value": true,
+          "iterations": 1000
+        },
+        {
+          "name": "bool_false",
+          "type": "bool",
+          "value": false,
+          "iterations": 1000
+        }
+      ]
+    },
+    "strings": {
+      "description": "String serialization/deserialization with varying lengths",
+      "benchmarks": [
+        {
+          "name": "string_empty",
+          "type": "string",
+          "value": "",
+          "iterations": 1000
+        },
+        {
+          "name": "string_short",
+          "type": "string",
+          "value": "hello!!!!",
+          "length": 10,
+          "iterations": 1000
+        },
+        {
+          "name": "string_medium",
+          "type": "string",
+          "value_generator": "repeat_char",
+          "char": "a",
+          "length": 100,
+          "iterations": 1000
+        },
+        {
+          "name": "string_long",
+          "type": "string",
+          "value_generator": "repeat_char",
+          "char": "b",
+          "length": 1000,
+          "iterations": 1000
+        },
+        {
+          "name": "string_unicode",
+          "type": "string",
+          "value": "Hello, 世界! 🌍 Привет мир",
+          "iterations": 1000
+        }
+      ]
+    },
+    "bytes": {
+      "description": "Byte array serialization/deserialization with varying lengths",
+      "benchmarks": [
+        {
+          "name": "bytes_empty",
+          "type": "bytes",
+          "value": [],
+          "iterations": 1000
+        },
+        {
+          "name": "bytes_small",
+          "type": "bytes",
+          "value_generator": "sequential_bytes",
+          "length": 10,
+          "iterations": 1000
+        },
+        {
+          "name": "bytes_medium",
+          "type": "bytes",
+          "value_generator": "sequential_bytes",
+          "length": 100,
+          "iterations": 1000
+        },
+        {
+          "name": "bytes_large",
+          "type": "bytes",
+          "value_generator": "sequential_bytes",
+          "length": 1000,
+          "iterations": 1000
+        },
+        {
+          "name": "bytes_address",
+          "type": "fixed_bytes",
+          "length": 32,
+          "value_generator": "address_bytes",
+          "iterations": 1000,
+          "note": "32-byte blockchain address"
+        }
+      ]
+    },
+    "vectors": {
+      "description": "Vector serialization/deserialization with varying sizes",
+      "benchmarks": [
+        {
+          "name": "vector_u8_empty",
+          "type": "vector<u8>",
+          "value": [],
+          "iterations": 1000
+        },
+        {
+          "name": "vector_u8_small",
+          "type": "vector<u8>",
+          "value_generator": "sequential_u8",
+          "length": 10,
+          "iterations": 1000
+        },
+        {
+          "name": "vector_u8_medium",
+          "type": "vector<u8>",
+          "value_generator": "sequential_u8",
+          "length": 100,
+          "iterations": 1000
+        },
+        {
+          "name": "vector_u8_large",
+          "type": "vector<u8>",
+          "value_generator": "sequential_u8",
+          "length": 1000,
+          "iterations": 1000
+        },
+        {
+          "name": "vector_u64_small",
+          "type": "vector<u64>",
+          "value_generator": "sequential_u64",
+          "length": 10,
+          "iterations": 1000
+        },
+        {
+          "name": "vector_u64_medium",
+          "type": "vector<u64>",
+          "value_generator": "sequential_u64",
+          "length": 100,
+          "iterations": 1000
+        },
+        {
+          "name": "vector_string_small",
+          "type": "vector<string>",
+          "value": ["apple", "banana", "cherry", "date", "elderberry"],
+          "iterations": 1000
+        }
+      ]
+    },
+    "structs": {
+      "description": "Struct serialization/deserialization with varying complexity",
+      "benchmarks": [
+        {
+          "name": "struct_simple",
+          "type": "struct",
+          "definition": {
+            "fields": [
+              {"name": "a", "type": "u8"},
+              {"name": "b", "type": "u64"}
+            ]
+          },
+          "value": {"a": 42, "b": "1000000"},
+          "iterations": 1000
+        },
+        {
+          "name": "struct_with_string",
+          "type": "struct",
+          "definition": {
+            "fields": [
+              {"name": "name", "type": "string"},
+              {"name": "value", "type": "u64"}
+            ]
+          },
+          "value": {"name": "test_item", "value": "999999"},
+          "iterations": 1000
+        },
+        {
+          "name": "struct_complex",
+          "type": "struct",
+          "definition": {
+            "fields": [
+              {"name": "id", "type": "u64"},
+              {"name": "name", "type": "string"},
+              {"name": "active", "type": "bool"},
+              {"name": "balance", "type": "u128"},
+              {"name": "tags", "type": "vector<string>"},
+              {"name": "metadata", "type": "bytes"}
+            ]
+          },
+          "value": {
+            "id": "12345",
+            "name": "Complex Entity",
+            "active": true,
+            "balance": "1000000000000000000",
+            "tags": ["important", "verified", "premium"],
+            "metadata": [1, 2, 3, 4, 5, 6, 7, 8]
+          },
+          "iterations": 1000
+        }
+      ]
+    },
+    "complex": {
+      "description": "Complex realistic scenarios (blockchain transactions)",
+      "benchmarks": [
+        {
+          "name": "transfer_transaction",
+          "type": "struct",
+          "definition": {
+            "fields": [
+              {"name": "sender", "type": "fixed_bytes", "length": 32},
+              {"name": "recipient", "type": "fixed_bytes", "length": 32},
+              {"name": "amount", "type": "u64"},
+              {"name": "sequence_number", "type": "u64"},
+              {"name": "gas_unit_price", "type": "u64"},
+              {"name": "max_gas_amount", "type": "u64"},
+              {"name": "expiration_timestamp", "type": "u64"}
+            ]
+          },
+          "value": {
+            "sender": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "recipient": "0x0000000000000000000000000000000000000000000000000000000000000002",
+            "amount": "100000000",
+            "sequence_number": "42",
+            "gas_unit_price": "100",
+            "max_gas_amount": "2000",
+            "expiration_timestamp": "1700000000"
+          },
+          "iterations": 1000,
+          "note": "Simulates a blockchain transfer transaction"
+        },
+        {
+          "name": "batch_transfer",
+          "type": "struct",
+          "definition": {
+            "fields": [
+              {"name": "sender", "type": "fixed_bytes", "length": 32},
+              {"name": "transfers", "type": "vector<transfer>"},
+              {"name": "memo", "type": "string"}
+            ],
+            "nested_types": {
+              "transfer": {
+                "fields": [
+                  {"name": "recipient", "type": "fixed_bytes", "length": 32},
+                  {"name": "amount", "type": "u64"}
+                ]
+              }
+            }
+          },
+          "value": {
+            "sender": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "transfers": [
+              {"recipient": "0x0000000000000000000000000000000000000000000000000000000000000002", "amount": "100"},
+              {"recipient": "0x0000000000000000000000000000000000000000000000000000000000000003", "amount": "200"},
+              {"recipient": "0x0000000000000000000000000000000000000000000000000000000000000004", "amount": "300"}
+            ],
+            "memo": "Monthly payments"
+          },
+          "iterations": 1000,
+          "note": "Batch transfer with multiple recipients"
+        },
+        {
+          "name": "option_heavy",
+          "type": "struct",
+          "definition": {
+            "fields": [
+              {"name": "required_field", "type": "u64"},
+              {"name": "optional_name", "type": "option<string>"},
+              {"name": "optional_amount", "type": "option<u64>"},
+              {"name": "optional_data", "type": "option<bytes>"}
+            ]
+          },
+          "value": {
+            "required_field": "100",
+            "optional_name": {"some": "test"},
+            "optional_amount": null,
+            "optional_data": {"some": [1, 2, 3]}
+          },
+          "iterations": 1000
+        }
+      ]
+    }
+  },
+  "aggregations": {
+    "description": "How to aggregate benchmark results",
+    "metrics": [
+      {
+        "name": "avg_ns",
+        "description": "Average time in nanoseconds"
+      },
+      {
+        "name": "min_ns",
+        "description": "Minimum time in nanoseconds"
+      },
+      {
+        "name": "max_ns",
+        "description": "Maximum time in nanoseconds"
+      },
+      {
+        "name": "p50_ns",
+        "description": "50th percentile (median) in nanoseconds"
+      },
+      {
+        "name": "p95_ns",
+        "description": "95th percentile in nanoseconds"
+      },
+      {
+        "name": "p99_ns",
+        "description": "99th percentile in nanoseconds"
+      },
+      {
+        "name": "throughput_ops_sec",
+        "description": "Operations per second"
+      }
+    ]
+  }
+}

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import struct
 from typing import Any, Callable, TypeVar
 
-from . import uleb128
 from .errors import (
     ExceededContainerDepth,
     ExceededMaxLength,
@@ -12,12 +12,23 @@ from .errors import (
     InvalidOption,
     InvalidUtf8,
     NonCanonicalMap,
+    NonCanonicalUleb128,
     RemainingInput,
+    Uleb128Overflow,
     UnexpectedEof,
 )
 from .types import MAX_CONTAINER_DEPTH, MAX_SEQUENCE_LENGTH
 
 T = TypeVar("T")
+
+# Pre-compiled struct formats for performance
+_STRUCT_U16 = struct.Struct("<H")
+_STRUCT_U32 = struct.Struct("<I")
+_STRUCT_U64 = struct.Struct("<Q")
+_STRUCT_I8 = struct.Struct("<b")
+_STRUCT_I16 = struct.Struct("<h")
+_STRUCT_I32 = struct.Struct("<i")
+_STRUCT_I64 = struct.Struct("<q")
 
 
 class BcsDeserializer:
@@ -34,6 +45,8 @@ class BcsDeserializer:
         >>> d.check_end()  # Verify no remaining bytes
     """
 
+    __slots__ = ("_data", "_offset", "_len", "_max_depth", "_current_depth")
+
     def __init__(
         self,
         data: bytes | bytearray | memoryview,
@@ -47,13 +60,14 @@ class BcsDeserializer:
         """
         self._data = memoryview(data) if not isinstance(data, memoryview) else data
         self._offset = 0
+        self._len = len(data)
         self._max_depth = max_depth
         self._current_depth = 0
 
     @property
     def remaining(self) -> int:
         """Number of bytes remaining to read."""
-        return len(self._data) - self._offset
+        return self._len - self._offset
 
     def check_end(self) -> None:
         """Verify all input has been consumed.
@@ -61,30 +75,9 @@ class BcsDeserializer:
         Raises:
             RemainingInput: If bytes remain after deserialization
         """
-        if self.remaining > 0:
-            raise RemainingInput(self.remaining)
-
-    def _read_bytes(self, count: int) -> bytes:
-        """Read exactly count bytes from input.
-
-        Raises:
-            UnexpectedEof: If insufficient bytes available
-        """
-        if self._offset + count > len(self._data):
-            raise UnexpectedEof(count, self.remaining)
-        result = bytes(self._data[self._offset : self._offset + count])
-        self._offset += count
-        return result
-
-    def _peek_byte(self) -> int:
-        """Peek at next byte without consuming it.
-
-        Raises:
-            UnexpectedEof: If no bytes available
-        """
-        if self._offset >= len(self._data):
-            raise UnexpectedEof()
-        return self._data[self._offset]
+        remaining = self._len - self._offset
+        if remaining > 0:
+            raise RemainingInput(remaining)
 
     def _check_depth(self, container: str = "") -> None:
         """Check and increment container depth."""
@@ -111,10 +104,13 @@ class BcsDeserializer:
             UnexpectedEof: If no bytes available
             InvalidBoolean: If byte is not 0x00 or 0x01
         """
-        byte = self._read_bytes(1)[0]
-        if byte == 0x00:
+        if self._offset >= self._len:
+            raise UnexpectedEof(1, 0)
+        byte = self._data[self._offset]
+        self._offset += 1
+        if byte == 0:
             return False
-        elif byte == 0x01:
+        elif byte == 1:
             return True
         else:
             raise InvalidBoolean(byte)
@@ -129,7 +125,11 @@ class BcsDeserializer:
         Returns:
             Integer in range [0, 255]
         """
-        return self._read_bytes(1)[0]
+        if self._offset >= self._len:
+            raise UnexpectedEof(1, 0)
+        value = self._data[self._offset]
+        self._offset += 1
+        return value
 
     def read_u16(self) -> int:
         """Deserialize an unsigned 16-bit integer (little-endian).
@@ -137,7 +137,12 @@ class BcsDeserializer:
         Returns:
             Integer in range [0, 65535]
         """
-        return int.from_bytes(self._read_bytes(2), "little")
+        end = self._offset + 2
+        if end > self._len:
+            raise UnexpectedEof(2, self._len - self._offset)
+        value = _STRUCT_U16.unpack(self._data[self._offset:end])[0]
+        self._offset = end
+        return value
 
     def read_u32(self) -> int:
         """Deserialize an unsigned 32-bit integer (little-endian).
@@ -145,7 +150,12 @@ class BcsDeserializer:
         Returns:
             Integer in range [0, 2^32-1]
         """
-        return int.from_bytes(self._read_bytes(4), "little")
+        end = self._offset + 4
+        if end > self._len:
+            raise UnexpectedEof(4, self._len - self._offset)
+        value = _STRUCT_U32.unpack(self._data[self._offset:end])[0]
+        self._offset = end
+        return value
 
     def read_u64(self) -> int:
         """Deserialize an unsigned 64-bit integer (little-endian).
@@ -153,7 +163,12 @@ class BcsDeserializer:
         Returns:
             Integer in range [0, 2^64-1]
         """
-        return int.from_bytes(self._read_bytes(8), "little")
+        end = self._offset + 8
+        if end > self._len:
+            raise UnexpectedEof(8, self._len - self._offset)
+        value = _STRUCT_U64.unpack(self._data[self._offset:end])[0]
+        self._offset = end
+        return value
 
     def read_u128(self) -> int:
         """Deserialize an unsigned 128-bit integer (little-endian).
@@ -161,7 +176,12 @@ class BcsDeserializer:
         Returns:
             Integer in range [0, 2^128-1]
         """
-        return int.from_bytes(self._read_bytes(16), "little")
+        end = self._offset + 16
+        if end > self._len:
+            raise UnexpectedEof(16, self._len - self._offset)
+        value = int.from_bytes(self._data[self._offset:end], "little")
+        self._offset = end
+        return value
 
     def read_u256(self) -> int:
         """Deserialize an unsigned 256-bit integer (little-endian).
@@ -169,7 +189,12 @@ class BcsDeserializer:
         Returns:
             Integer in range [0, 2^256-1]
         """
-        return int.from_bytes(self._read_bytes(32), "little")
+        end = self._offset + 32
+        if end > self._len:
+            raise UnexpectedEof(32, self._len - self._offset)
+        value = int.from_bytes(self._data[self._offset:end], "little")
+        self._offset = end
+        return value
 
     # =========================================================================
     # SIGNED INTEGERS (two's complement)
@@ -181,7 +206,11 @@ class BcsDeserializer:
         Returns:
             Integer in range [-128, 127]
         """
-        return int.from_bytes(self._read_bytes(1), "little", signed=True)
+        if self._offset >= self._len:
+            raise UnexpectedEof(1, 0)
+        value = _STRUCT_I8.unpack(self._data[self._offset:self._offset + 1])[0]
+        self._offset += 1
+        return value
 
     def read_i16(self) -> int:
         """Deserialize a signed 16-bit integer (two's complement, little-endian).
@@ -189,7 +218,12 @@ class BcsDeserializer:
         Returns:
             Integer in range [-32768, 32767]
         """
-        return int.from_bytes(self._read_bytes(2), "little", signed=True)
+        end = self._offset + 2
+        if end > self._len:
+            raise UnexpectedEof(2, self._len - self._offset)
+        value = _STRUCT_I16.unpack(self._data[self._offset:end])[0]
+        self._offset = end
+        return value
 
     def read_i32(self) -> int:
         """Deserialize a signed 32-bit integer (two's complement, little-endian).
@@ -197,7 +231,12 @@ class BcsDeserializer:
         Returns:
             Integer in range [-2^31, 2^31-1]
         """
-        return int.from_bytes(self._read_bytes(4), "little", signed=True)
+        end = self._offset + 4
+        if end > self._len:
+            raise UnexpectedEof(4, self._len - self._offset)
+        value = _STRUCT_I32.unpack(self._data[self._offset:end])[0]
+        self._offset = end
+        return value
 
     def read_i64(self) -> int:
         """Deserialize a signed 64-bit integer (two's complement, little-endian).
@@ -205,7 +244,12 @@ class BcsDeserializer:
         Returns:
             Integer in range [-2^63, 2^63-1]
         """
-        return int.from_bytes(self._read_bytes(8), "little", signed=True)
+        end = self._offset + 8
+        if end > self._len:
+            raise UnexpectedEof(8, self._len - self._offset)
+        value = _STRUCT_I64.unpack(self._data[self._offset:end])[0]
+        self._offset = end
+        return value
 
     def read_i128(self) -> int:
         """Deserialize a signed 128-bit integer (two's complement, little-endian).
@@ -213,7 +257,12 @@ class BcsDeserializer:
         Returns:
             Integer in range [-2^127, 2^127-1]
         """
-        return int.from_bytes(self._read_bytes(16), "little", signed=True)
+        end = self._offset + 16
+        if end > self._len:
+            raise UnexpectedEof(16, self._len - self._offset)
+        value = int.from_bytes(self._data[self._offset:end], "little", signed=True)
+        self._offset = end
+        return value
 
     def read_i256(self) -> int:
         """Deserialize a signed 256-bit integer (two's complement, little-endian).
@@ -221,7 +270,12 @@ class BcsDeserializer:
         Returns:
             Integer in range [-2^255, 2^255-1]
         """
-        return int.from_bytes(self._read_bytes(32), "little", signed=True)
+        end = self._offset + 32
+        if end > self._len:
+            raise UnexpectedEof(32, self._len - self._offset)
+        value = int.from_bytes(self._data[self._offset:end], "little", signed=True)
+        self._offset = end
+        return value
 
     # =========================================================================
     # ULEB128
@@ -238,8 +292,38 @@ class BcsDeserializer:
             NonCanonicalUleb128: If encoding is not minimal
             Uleb128Overflow: If value exceeds u32 max
         """
-        value, self._offset = uleb128.decode(self._data, self._offset)
-        return value
+        # Inline ULEB128 decoding for performance
+        value = 0
+        shift = 0
+        data = self._data
+        offset = self._offset
+        data_len = self._len
+
+        for i in range(5):  # Maximum 5 bytes for u32
+            if offset + i >= data_len:
+                raise UnexpectedEof()
+
+            byte = data[offset + i]
+            digit = byte & 0x7F
+            value |= digit << shift
+
+            # Check if this is the last byte (high bit is 0)
+            if digit == byte:
+                # Reject non-canonical encodings (trailing zero bytes)
+                if shift > 0 and digit == 0:
+                    raise NonCanonicalUleb128()
+
+                # Check for overflow
+                if value > 0xFFFFFFFF:
+                    raise Uleb128Overflow()
+
+                self._offset = offset + i + 1
+                return value
+
+            shift += 7
+
+        # If we get here, we read 5 bytes and all had continuation bits
+        raise Uleb128Overflow()
 
     # =========================================================================
     # BYTES AND STRINGS
@@ -257,7 +341,12 @@ class BcsDeserializer:
         length = self.read_uleb128()
         if length > MAX_SEQUENCE_LENGTH:
             raise ExceededMaxLength(length)
-        return self._read_bytes(length)
+        end = self._offset + length
+        if end > self._len:
+            raise UnexpectedEof(length, self._len - self._offset)
+        result = bytes(self._data[self._offset:end])
+        self._offset = end
+        return result
 
     def read_string(self) -> str:
         """Deserialize a UTF-8 string (length-prefixed with ULEB128).
@@ -268,11 +357,19 @@ class BcsDeserializer:
         Raises:
             InvalidUtf8: If bytes are not valid UTF-8
         """
-        data = self.read_bytes()
+        length = self.read_uleb128()
+        if length > MAX_SEQUENCE_LENGTH:
+            raise ExceededMaxLength(length)
+        end = self._offset + length
+        if end > self._len:
+            raise UnexpectedEof(length, self._len - self._offset)
         try:
-            return data.decode("utf-8")
+            # Decode directly from memoryview
+            result = self._data[self._offset:end].tobytes().decode("utf-8")
         except UnicodeDecodeError as e:
             raise InvalidUtf8(str(e)) from e
+        self._offset = end
+        return result
 
     def read_fixed_bytes(self, length: int) -> bytes:
         """Deserialize fixed-length bytes (no length prefix).
@@ -283,7 +380,12 @@ class BcsDeserializer:
         Returns:
             Deserialized bytes
         """
-        return self._read_bytes(length)
+        end = self._offset + length
+        if end > self._len:
+            raise UnexpectedEof(length, self._len - self._offset)
+        result = bytes(self._data[self._offset:end])
+        self._offset = end
+        return result
 
     # =========================================================================
     # OPTION
@@ -301,21 +403,42 @@ class BcsDeserializer:
         Raises:
             InvalidOption: If tag byte is not 0x00 or 0x01
         """
-        tag = self._read_bytes(1)[0]
-        if tag == 0x00:
+        if self._offset >= self._len:
+            raise UnexpectedEof(1, 0)
+        tag = self._data[self._offset]
+        self._offset += 1
+        if tag == 0:
             return None
-        elif tag == 0x01:
+        elif tag == 1:
             return deserializer(self)
         else:
             raise InvalidOption(tag)
 
     def read_option_u8(self) -> int | None:
-        """Deserialize an optional u8."""
-        return self.read_option(lambda d: d.read_u8())
+        """Deserialize an optional u8 (optimized)."""
+        if self._offset >= self._len:
+            raise UnexpectedEof(1, 0)
+        tag = self._data[self._offset]
+        self._offset += 1
+        if tag == 0:
+            return None
+        elif tag == 1:
+            return self.read_u8()
+        else:
+            raise InvalidOption(tag)
 
     def read_option_u64(self) -> int | None:
-        """Deserialize an optional u64."""
-        return self.read_option(lambda d: d.read_u64())
+        """Deserialize an optional u64 (optimized)."""
+        if self._offset >= self._len:
+            raise UnexpectedEof(1, 0)
+        tag = self._data[self._offset]
+        self._offset += 1
+        if tag == 0:
+            return None
+        elif tag == 1:
+            return self.read_u64()
+        else:
+            raise InvalidOption(tag)
 
     def read_option_string(self) -> str | None:
         """Deserialize an optional string."""
@@ -343,12 +466,33 @@ class BcsDeserializer:
         return [deserializer(self) for _ in range(length)]
 
     def read_vector_u8(self) -> list[int]:
-        """Deserialize a vector of u8."""
-        return self.read_vector(lambda d: d.read_u8())
+        """Deserialize a vector of u8 (optimized - returns list of ints)."""
+        length = self.read_uleb128()
+        if length > MAX_SEQUENCE_LENGTH:
+            raise ExceededMaxLength(length)
+        end = self._offset + length
+        if end > self._len:
+            raise UnexpectedEof(length, self._len - self._offset)
+        result = list(self._data[self._offset:end])
+        self._offset = end
+        return result
 
     def read_vector_u64(self) -> list[int]:
-        """Deserialize a vector of u64."""
-        return self.read_vector(lambda d: d.read_u64())
+        """Deserialize a vector of u64 (optimized)."""
+        length = self.read_uleb128()
+        if length > MAX_SEQUENCE_LENGTH:
+            raise ExceededMaxLength(length)
+        byte_length = length * 8
+        end = self._offset + byte_length
+        if end > self._len:
+            raise UnexpectedEof(byte_length, self._len - self._offset)
+
+        unpack = _STRUCT_U64.unpack
+        data = self._data
+        offset = self._offset
+        result = [unpack(data[offset + i * 8:offset + (i + 1) * 8])[0] for i in range(length)]
+        self._offset = end
+        return result
 
     def read_vector_string(self) -> list[str]:
         """Deserialize a vector of strings."""

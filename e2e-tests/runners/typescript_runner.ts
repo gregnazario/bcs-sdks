@@ -4,10 +4,16 @@
  *
  * Reads test vectors from stdin, performs roundtrip serialization,
  * and outputs results to stdout.
+ *
+ * Supports two modes:
+ * - Default: Roundtrip testing for correctness
+ * - Benchmark (--benchmark): Performance timing
  */
 
 import * as readline from "readline";
 import * as path from "path";
+
+const benchmarkMode = process.argv.includes("--benchmark");
 
 // Import the BCS SDK (relative to the runner location)
 const sdkPath = path.resolve(__dirname, "../../sdks/typescript/src");
@@ -450,7 +456,314 @@ async function main() {
   console.log(JSON.stringify(output, null, 2));
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Benchmark types and functions
+interface BenchmarkSpec {
+  version: string;
+  config: {
+    default_iterations: number;
+    warmup_iterations: number;
+  };
+  scenarios: Record<string, { benchmarks: BenchmarkCase[] }>;
+}
+
+interface BenchmarkCase {
+  name: string;
+  type: string;
+  value?: any;
+  value_generator?: string;
+  length?: number;
+  char?: string;
+  iterations?: number;
+}
+
+interface BenchmarkResult {
+  name: string;
+  type: string;
+  iterations: number;
+  serialize_avg_ns: number;
+  serialize_min_ns: number;
+  serialize_max_ns: number;
+  serialize_p50_ns: number;
+  serialize_p95_ns: number;
+  deserialize_avg_ns: number;
+  deserialize_min_ns: number;
+  deserialize_max_ns: number;
+  deserialize_p50_ns: number;
+  deserialize_p95_ns: number;
+  throughput_serialize_ops_sec: number;
+  throughput_deserialize_ops_sec: number;
+  error?: string;
+}
+
+function computeStats(times: number[]): {
+  avg: number;
+  min: number;
+  max: number;
+  p50: number;
+  p95: number;
+} {
+  if (times.length === 0) return { avg: 0, min: 0, max: 0, p50: 0, p95: 0 };
+  const sorted = [...times].sort((a, b) => a - b);
+  const n = sorted.length;
+  return {
+    avg: times.reduce((a, b) => a + b, 0) / n,
+    min: sorted[0],
+    max: sorted[n - 1],
+    p50: sorted[Math.floor(n / 2)],
+    p95: sorted[Math.floor(n * 0.95)],
+  };
+}
+
+function generateValue(bc: BenchmarkCase): any {
+  if (bc.value !== undefined) return bc.value;
+  const length = bc.length ?? 10;
+  switch (bc.value_generator) {
+    case "repeat_char":
+      return (bc.char ?? "a").repeat(length);
+    case "sequential_bytes":
+    case "sequential_u8":
+      return Array.from({ length }, (_, i) => i % 256);
+    case "sequential_u64":
+      return Array.from({ length }, (_, i) => i.toString());
+    case "address_bytes":
+      return [...Array(31).fill(0), 1];
+    default:
+      return bc.value;
+  }
+}
+
+async function runBenchmarks(spec: BenchmarkSpec) {
+  const { BcsSerializer, BcsDeserializer } = await loadBcs();
+  const results: BenchmarkResult[] = [];
+  const defaultIterations = spec.config.default_iterations ?? 1000;
+  const warmup = spec.config.warmup_iterations ?? 10;
+
+  for (const [, group] of Object.entries(spec.scenarios)) {
+    for (const bc of group.benchmarks) {
+      const iterations = bc.iterations ?? defaultIterations;
+      const value = generateValue(bc);
+
+      try {
+        // Serialize to get bytes
+        const serializeOnce = () => {
+          const s = new BcsSerializer();
+          serializeValue(s, bc.type, value);
+          return s.toBytes();
+        };
+
+        const bcsBytes = serializeOnce();
+
+        // Warmup serialize
+        for (let i = 0; i < warmup; i++) serializeOnce();
+
+        // Benchmark serialize
+        const serTimes: number[] = [];
+        for (let i = 0; i < iterations; i++) {
+          const start = performance.now();
+          serializeOnce();
+          serTimes.push((performance.now() - start) * 1_000_000); // ms to ns
+        }
+
+        // Warmup deserialize
+        for (let i = 0; i < warmup; i++) {
+          const d = new BcsDeserializer(bcsBytes);
+          deserializeValue(d, bc.type);
+        }
+
+        // Benchmark deserialize
+        const deTimes: number[] = [];
+        for (let i = 0; i < iterations; i++) {
+          const start = performance.now();
+          const d = new BcsDeserializer(bcsBytes);
+          deserializeValue(d, bc.type);
+          deTimes.push((performance.now() - start) * 1_000_000);
+        }
+
+        const serStats = computeStats(serTimes);
+        const deStats = computeStats(deTimes);
+
+        results.push({
+          name: bc.name,
+          type: bc.type,
+          iterations,
+          serialize_avg_ns: serStats.avg,
+          serialize_min_ns: serStats.min,
+          serialize_max_ns: serStats.max,
+          serialize_p50_ns: serStats.p50,
+          serialize_p95_ns: serStats.p95,
+          deserialize_avg_ns: deStats.avg,
+          deserialize_min_ns: deStats.min,
+          deserialize_max_ns: deStats.max,
+          deserialize_p50_ns: deStats.p50,
+          deserialize_p95_ns: deStats.p95,
+          throughput_serialize_ops_sec:
+            serStats.avg > 0 ? 1_000_000_000 / serStats.avg : 0,
+          throughput_deserialize_ops_sec:
+            deStats.avg > 0 ? 1_000_000_000 / deStats.avg : 0,
+        });
+      } catch (e: any) {
+        results.push({
+          name: bc.name,
+          type: bc.type,
+          iterations,
+          serialize_avg_ns: 0,
+          serialize_min_ns: 0,
+          serialize_max_ns: 0,
+          serialize_p50_ns: 0,
+          serialize_p95_ns: 0,
+          deserialize_avg_ns: 0,
+          deserialize_min_ns: 0,
+          deserialize_max_ns: 0,
+          deserialize_p50_ns: 0,
+          deserialize_p95_ns: 0,
+          throughput_serialize_ops_sec: 0,
+          throughput_deserialize_ops_sec: 0,
+          error: e.message || String(e),
+        });
+      }
+    }
+  }
+
+  return {
+    version: spec.version,
+    description: "TypeScript benchmark results",
+    benchmarks: results,
+  };
+}
+
+function serializeValue(s: any, typ: string, value: any): void {
+  switch (typ) {
+    case "bool":
+      s.writeBool(value);
+      break;
+    case "u8":
+      s.writeU8(value);
+      break;
+    case "u16":
+      s.writeU16(value);
+      break;
+    case "u32":
+      s.writeU32(value);
+      break;
+    case "u64":
+      s.writeU64(BigInt(value));
+      break;
+    case "u128":
+      s.writeU128(BigInt(value));
+      break;
+    case "i8":
+      s.writeI8(value);
+      break;
+    case "i16":
+      s.writeI16(value);
+      break;
+    case "i32":
+      s.writeI32(value);
+      break;
+    case "i64":
+      s.writeI64(BigInt(value));
+      break;
+    case "i128":
+      s.writeI128(BigInt(value));
+      break;
+    case "string":
+      s.writeString(value);
+      break;
+    case "bytes":
+      s.writeBytes(new Uint8Array(value));
+      break;
+    case "fixed_bytes":
+      s.writeFixedBytes(new Uint8Array(value), value.length);
+      break;
+    case "vector<u8>":
+      s.writeUleb128(value.length);
+      for (const v of value) s.writeU8(v);
+      break;
+    case "vector<u64>":
+      s.writeUleb128(value.length);
+      for (const v of value) s.writeU64(BigInt(v));
+      break;
+    case "vector<string>":
+      s.writeUleb128(value.length);
+      for (const v of value) s.writeString(v);
+      break;
+    default:
+      throw new Error(`Unknown type for benchmark: ${typ}`);
+  }
+}
+
+function deserializeValue(d: any, typ: string): any {
+  switch (typ) {
+    case "bool":
+      return d.readBool();
+    case "u8":
+      return d.readU8();
+    case "u16":
+      return d.readU16();
+    case "u32":
+      return d.readU32();
+    case "u64":
+      return d.readU64();
+    case "u128":
+      return d.readU128();
+    case "i8":
+      return d.readI8();
+    case "i16":
+      return d.readI16();
+    case "i32":
+      return d.readI32();
+    case "i64":
+      return d.readI64();
+    case "i128":
+      return d.readI128();
+    case "string":
+      return d.readString();
+    case "bytes":
+      return d.readBytes();
+    case "fixed_bytes":
+      return d.readFixedBytes(32);
+    case "vector<u8>": {
+      const len = d.readUleb128();
+      return Array.from({ length: len }, () => d.readU8());
+    }
+    case "vector<u64>": {
+      const len = d.readUleb128();
+      return Array.from({ length: len }, () => d.readU64());
+    }
+    case "vector<string>": {
+      const len = d.readUleb128();
+      return Array.from({ length: len }, () => d.readString());
+    }
+    default:
+      throw new Error(`Unknown type for benchmark: ${typ}`);
+  }
+}
+
+async function mainWithBenchmark() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: false,
+  });
+
+  let inputData = "";
+  for await (const line of rl) {
+    inputData += line;
+  }
+
+  const spec: BenchmarkSpec = JSON.parse(inputData);
+  const output = await runBenchmarks(spec);
+  console.log(JSON.stringify(output, null, 2));
+}
+
+if (benchmarkMode) {
+  mainWithBenchmark().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+} else {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

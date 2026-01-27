@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Optional
 
 # Languages to test (in order)
+# Note: haskell and ocaml runners exist but are not included in default tests
+# due to significant API differences and limited demand
 LANGUAGES = [
     "python",
     "typescript",
@@ -30,8 +32,6 @@ LANGUAGES = [
     "c",
     "zig",
     "dart",
-    "haskell",
-    "ocaml",
     "java",
 ]
 
@@ -123,7 +123,19 @@ def get_runner_command(language: str) -> tuple[list[str], Optional[Path]]:
         # Go needs to run from SDK dir to find the module
         return ["go", "run", str(runner_dir / "go_runner.go")], sdk_dir
     elif language == "rust":
-        # Rust roundtrip not implemented yet (would need serde setup)
+        # Build and run Rust runner
+        import shutil
+        rust_runner_dir = runner_dir / "rust_runner"
+        rust_binary = rust_runner_dir / "target" / "release" / "rust_runner"
+        if rust_runner_dir.exists() and shutil.which("cargo"):
+            # Build in release mode
+            result = subprocess.run(
+                ["cargo", "build", "--release", "-q"],
+                cwd=str(rust_runner_dir),
+                capture_output=True
+            )
+            if result.returncode == 0 and rust_binary.exists():
+                return [str(rust_binary)], None
         return [], None
     elif language == "elixir":
         return ["elixir", str(runner_dir / "elixir_runner.exs")], sdk_dir
@@ -132,10 +144,51 @@ def get_runner_command(language: str) -> tuple[list[str], Optional[Path]]:
     elif language == "swift":
         return ["swift", str(runner_dir / "swift_runner.swift")], None
     elif language == "kotlin":
-        # Kotlin script runner
-        return ["kotlin", str(runner_dir / "kotlin_runner.kt")], None
+        # Compile with kotlinc and run
+        import shutil
+        kt_runner_dir = runner_dir / "kotlin_runner"
+        kt_source = kt_runner_dir / "src" / "main" / "kotlin" / "KotlinRunner.kt"
+        kt_jar = runner_dir / "kotlin_runner.jar"
+        kt_sdk_jar = SDKS_DIR / "kotlin" / "build" / "libs" / "bcs-kotlin-0.1.0.jar"
+        
+        if kt_source.exists() and shutil.which("kotlinc"):
+            # Compile if needed
+            needs_compile = not kt_jar.exists()
+            if kt_jar.exists() and kt_source.stat().st_mtime > kt_jar.stat().st_mtime:
+                needs_compile = True
+            
+            if needs_compile and kt_sdk_jar.exists():
+                result = subprocess.run(
+                    ["kotlinc", str(kt_source), "-include-runtime", "-cp", str(kt_sdk_jar), "-d", str(kt_jar)],
+                    capture_output=True
+                )
+                if result.returncode != 0:
+                    # Fall back to kotlin script mode
+                    kt_standalone = runner_dir / "kotlin_runner.kt"
+                    if kt_standalone.exists():
+                        return ["kotlin", str(kt_standalone)], None
+                    return [], None
+            
+            if kt_jar.exists():
+                return ["java", "-cp", f"{kt_jar}:{kt_sdk_jar}", "KotlinRunnerKt"], None
+        
+        # Fall back to standalone script
+        kt_standalone = runner_dir / "kotlin_runner.kt"
+        if kt_standalone.exists() and shutil.which("kotlin"):
+            return ["kotlin", str(kt_standalone)], None
+        
+        return [], None
     elif language == "csharp":
-        # C# script runner (requires dotnet-script)
+        # Build and run C# project
+        csharp_dir = runner_dir / "CSharpRunner"
+        import shutil
+        if csharp_dir.exists() and shutil.which("dotnet"):
+            # Build the project
+            result = subprocess.run(["dotnet", "build", "-c", "Release", "-o", str(csharp_dir / "bin"), "-v", "q"],
+                                   cwd=str(csharp_dir), capture_output=True)
+            if result.returncode == 0:
+                return ["dotnet", str(csharp_dir / "bin" / "CSharpRunner.dll")], None
+        # Fall back to dotnet script if project doesn't exist
         return ["dotnet", "script", str(runner_dir / "csharp_runner.cs")], None
     elif language == "cpp":
         # Compile if needed, then run
@@ -143,22 +196,26 @@ def get_runner_command(language: str) -> tuple[list[str], Optional[Path]]:
         cpp_source = runner_dir / "cpp_runner.cpp"
         if not cpp_runner.exists() or cpp_source.stat().st_mtime > cpp_runner.stat().st_mtime:
             # Compile the C++ runner
-            import subprocess
             subprocess.run(["g++", "-std=c++17", "-O2", "-o", str(cpp_runner), str(cpp_source)], check=True)
         return [str(cpp_runner)], None
     elif language == "c":
-        # C runner not implemented yet
-        return [], None
+        # Compile if needed, then run
+        c_runner = runner_dir / "c_runner"
+        c_source = runner_dir / "c_runner.c"
+        if not c_runner.exists() or c_source.stat().st_mtime > c_runner.stat().st_mtime:
+            subprocess.run(["gcc", "-std=c99", "-O2", "-o", str(c_runner), str(c_source)], check=True)
+        return [str(c_runner)], None
     elif language == "zig":
-        # Zig runner not implemented yet
-        return [], None
+        return ["zig", "run", str(runner_dir / "zig_runner.zig")], None
     elif language == "dart":
         return ["dart", "run", str(runner_dir / "dart_runner.dart")], None
     elif language == "haskell":
-        # Haskell runner not implemented yet
+        # Haskell runner exists but is not included in default tests
+        # Runner source: runners/haskell_runner.hs
         return [], None
     elif language == "ocaml":
-        # OCaml runner not implemented yet
+        # OCaml runner exists but is not included in default tests
+        # Runner source: runners/ocaml_runner.ml
         return [], None
     elif language == "java":
         # Java single-file source runner (Java 11+)

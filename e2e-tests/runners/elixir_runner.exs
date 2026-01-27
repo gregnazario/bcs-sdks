@@ -349,4 +349,219 @@ defmodule E2ERunner do
   end
 end
 
-E2ERunner.run()
+defmodule BenchmarkRunner do
+  @moduledoc "Benchmark runner for Elixir BCS SDK"
+
+  alias Bcs.{Deserializer, Serializer}
+
+  def compute_stats(times) when length(times) == 0, do: %{avg: 0, min: 0, max: 0, p50: 0, p95: 0}
+  def compute_stats(times) do
+    sorted = Enum.sort(times)
+    n = length(sorted)
+    sum = Enum.sum(times)
+    %{
+      avg: sum / n,
+      min: Enum.min(sorted),
+      max: Enum.max(sorted),
+      p50: Enum.at(sorted, div(n, 2)),
+      p95: Enum.at(sorted, trunc(n * 0.95))
+    }
+  end
+
+  def generate_value(bc) do
+    cond do
+      Map.has_key?(bc, "value") and bc["value"] != nil -> bc["value"]
+      bc["value_generator"] == "repeat_char" ->
+        char = bc["char"] || "a"
+        length = bc["length"] || 10
+        String.duplicate(char, length)
+      bc["value_generator"] in ["sequential_bytes", "sequential_u8"] ->
+        length = bc["length"] || 10
+        Enum.map(0..(length - 1), fn i -> rem(i, 256) end)
+      bc["value_generator"] == "sequential_u64" ->
+        length = bc["length"] || 10
+        Enum.map(0..(length - 1), &Integer.to_string/1)
+      bc["value_generator"] == "address_bytes" ->
+        List.duplicate(0, 31) ++ [1]
+      true -> bc["value"]
+    end
+  end
+
+  def serialize_value(ser, "bool", value), do: Serializer.write_bool(ser, value)
+  def serialize_value(ser, "u8", value), do: Serializer.write_u8(ser, value)
+  def serialize_value(ser, "u16", value), do: Serializer.write_u16(ser, value)
+  def serialize_value(ser, "u32", value), do: Serializer.write_u32(ser, value)
+  def serialize_value(ser, "u64", value) do
+    v = if is_binary(value), do: String.to_integer(value), else: value
+    Serializer.write_u64(ser, v)
+  end
+  def serialize_value(ser, "u128", value) do
+    v = if is_binary(value), do: String.to_integer(value), else: value
+    Serializer.write_u128(ser, v)
+  end
+  def serialize_value(ser, "i8", value), do: Serializer.write_i8(ser, value)
+  def serialize_value(ser, "i16", value), do: Serializer.write_i16(ser, value)
+  def serialize_value(ser, "i32", value), do: Serializer.write_i32(ser, value)
+  def serialize_value(ser, "i64", value) do
+    v = if is_binary(value), do: String.to_integer(value), else: value
+    Serializer.write_i64(ser, v)
+  end
+  def serialize_value(ser, "i128", value) do
+    v = if is_binary(value), do: String.to_integer(value), else: value
+    Serializer.write_i128(ser, v)
+  end
+  def serialize_value(ser, "string", value), do: Serializer.write_string(ser, value)
+  def serialize_value(ser, "bytes", value) when is_list(value), do: Serializer.write_bytes(ser, :binary.list_to_bin(value))
+  def serialize_value(ser, "bytes", value), do: Serializer.write_bytes(ser, value)
+  def serialize_value(ser, "fixed_bytes", value) when is_list(value), do: Serializer.write_fixed_bytes(ser, :binary.list_to_bin(value), length(value))
+  def serialize_value(ser, "vector<u8>", value) do
+    ser = Serializer.write_uleb128(ser, length(value))
+    Enum.reduce(value, ser, fn v, s -> Serializer.write_u8(s, v) end)
+  end
+  def serialize_value(ser, "vector<u64>", value) do
+    ser = Serializer.write_uleb128(ser, length(value))
+    Enum.reduce(value, ser, fn v, s ->
+      val = if is_binary(v), do: String.to_integer(v), else: v
+      Serializer.write_u64(s, val)
+    end)
+  end
+  def serialize_value(ser, "vector<string>", value) do
+    ser = Serializer.write_uleb128(ser, length(value))
+    Enum.reduce(value, ser, fn v, s -> Serializer.write_string(s, v) end)
+  end
+  def serialize_value(ser, _type, _value), do: ser
+
+  def deserialize_value(data, "bool"), do: Deserializer.read_bool!(data)
+  def deserialize_value(data, "u8"), do: Deserializer.read_u8!(data)
+  def deserialize_value(data, "u16"), do: Deserializer.read_u16!(data)
+  def deserialize_value(data, "u32"), do: Deserializer.read_u32!(data)
+  def deserialize_value(data, "u64"), do: Deserializer.read_u64!(data)
+  def deserialize_value(data, "u128"), do: Deserializer.read_u128!(data)
+  def deserialize_value(data, "i8"), do: Deserializer.read_i8!(data)
+  def deserialize_value(data, "i16"), do: Deserializer.read_i16!(data)
+  def deserialize_value(data, "i32"), do: Deserializer.read_i32!(data)
+  def deserialize_value(data, "i64"), do: Deserializer.read_i64!(data)
+  def deserialize_value(data, "i128"), do: Deserializer.read_i128!(data)
+  def deserialize_value(data, "string"), do: Deserializer.read_string!(data)
+  def deserialize_value(data, "bytes"), do: Deserializer.read_bytes!(data)
+  def deserialize_value(data, "fixed_bytes"), do: Deserializer.read_fixed_bytes!(data, 32)
+  def deserialize_value(data, "vector<u8>") do
+    {len, rest} = Bcs.Uleb128.decode!(data)
+    Enum.reduce(1..len, {[], rest}, fn _, {acc, d} ->
+      {v, r} = Deserializer.read_u8!(d)
+      {acc ++ [v], r}
+    end)
+  end
+  def deserialize_value(data, "vector<u64>") do
+    {len, rest} = Bcs.Uleb128.decode!(data)
+    Enum.reduce(1..len, {[], rest}, fn _, {acc, d} ->
+      {v, r} = Deserializer.read_u64!(d)
+      {acc ++ [v], r}
+    end)
+  end
+  def deserialize_value(data, "vector<string>") do
+    {len, rest} = Bcs.Uleb128.decode!(data)
+    Enum.reduce(1..len, {[], rest}, fn _, {acc, d} ->
+      {v, r} = Deserializer.read_string!(d)
+      {acc ++ [v], r}
+    end)
+  end
+  def deserialize_value(data, _type), do: {nil, data}
+
+  def run_benchmark(spec) do
+    default_iterations = get_in(spec, ["config", "default_iterations"]) || 1000
+    warmup = get_in(spec, ["config", "warmup_iterations"]) || 10
+
+    scenarios = spec["scenarios"] || %{}
+
+    results = Enum.flat_map(scenarios, fn {_category, group} ->
+      benchmarks = group["benchmarks"] || []
+      Enum.map(benchmarks, fn bc ->
+        iterations = bc["iterations"] || default_iterations
+        run_single_benchmark(bc, iterations, warmup)
+      end)
+    end)
+
+    %{
+      "version" => spec["version"] || "1.0.0",
+      "description" => "Elixir benchmark results",
+      "benchmarks" => results
+    }
+  end
+
+  defp run_single_benchmark(bc, iterations, warmup) do
+    try do
+      value = generate_value(bc)
+      type = bc["type"]
+
+      # Serialize to get bytes
+      ser = Serializer.new() |> serialize_value(type, value)
+      bcs_bytes = Serializer.to_bytes(ser)
+
+      # Warmup serialize
+      for _ <- 1..warmup do
+        Serializer.new() |> serialize_value(type, value) |> Serializer.to_bytes()
+      end
+
+      # Benchmark serialize
+      ser_times = for _ <- 1..iterations do
+        start = :erlang.monotonic_time(:nanosecond)
+        Serializer.new() |> serialize_value(type, value) |> Serializer.to_bytes()
+        :erlang.monotonic_time(:nanosecond) - start
+      end
+
+      # Warmup deserialize
+      for _ <- 1..warmup do
+        deserialize_value(bcs_bytes, type)
+      end
+
+      # Benchmark deserialize
+      de_times = for _ <- 1..iterations do
+        start = :erlang.monotonic_time(:nanosecond)
+        deserialize_value(bcs_bytes, type)
+        :erlang.monotonic_time(:nanosecond) - start
+      end
+
+      ser_stats = compute_stats(ser_times)
+      de_stats = compute_stats(de_times)
+
+      ser_throughput = if ser_stats.avg > 0, do: 1_000_000_000 / ser_stats.avg, else: 0
+      de_throughput = if de_stats.avg > 0, do: 1_000_000_000 / de_stats.avg, else: 0
+
+      %{
+        "name" => bc["name"],
+        "type" => type,
+        "iterations" => iterations,
+        "serialize_avg_ns" => ser_stats.avg,
+        "serialize_min_ns" => ser_stats.min,
+        "serialize_max_ns" => ser_stats.max,
+        "serialize_p50_ns" => ser_stats.p50,
+        "serialize_p95_ns" => ser_stats.p95,
+        "deserialize_avg_ns" => de_stats.avg,
+        "deserialize_min_ns" => de_stats.min,
+        "deserialize_max_ns" => de_stats.max,
+        "deserialize_p50_ns" => de_stats.p50,
+        "deserialize_p95_ns" => de_stats.p95,
+        "throughput_serialize_ops_sec" => ser_throughput,
+        "throughput_deserialize_ops_sec" => de_throughput
+      }
+    rescue
+      e ->
+        %{
+          "name" => bc["name"],
+          "type" => bc["type"],
+          "iterations" => iterations,
+          "error" => Exception.message(e)
+        }
+    end
+  end
+end
+
+if "--benchmark" in System.argv() do
+  input = IO.read(:stdio, :eof)
+  spec = Jason.decode!(input)
+  output = BenchmarkRunner.run_benchmark(spec)
+  IO.puts(Jason.encode!(output, pretty: true))
+else
+  E2ERunner.run()
+end

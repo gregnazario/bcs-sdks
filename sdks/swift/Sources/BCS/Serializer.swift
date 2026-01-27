@@ -5,9 +5,12 @@ import Foundation
 
 /// BCS Serializer - Manual serialization API
 public final class BcsSerializer {
-    private var buffer: [UInt8] = []
-    private var depth: Int = 0
+    @usableFromInline
+    internal var buffer: ContiguousArray<UInt8> = []
+    @usableFromInline
+    internal var depth: Int = 0
 
+    @inlinable
     public init() {
         buffer.reserveCapacity(256)
     }
@@ -15,6 +18,7 @@ public final class BcsSerializer {
     // MARK: - Boolean
 
     /// Write a boolean value
+    @inlinable
     @discardableResult
     public func writeBool(_ value: Bool) -> BcsSerializer {
         buffer.append(value ? 1 : 0)
@@ -24,6 +28,7 @@ public final class BcsSerializer {
     // MARK: - Unsigned Integers
 
     /// Write an unsigned 8-bit integer
+    @inlinable
     @discardableResult
     public func writeU8(_ value: UInt8) -> BcsSerializer {
         buffer.append(value)
@@ -31,33 +36,42 @@ public final class BcsSerializer {
     }
 
     /// Write an unsigned 16-bit integer (little-endian)
+    @inlinable
     @discardableResult
     public func writeU16(_ value: UInt16) -> BcsSerializer {
-        buffer.append(UInt8(value & 0xFF))
-        buffer.append(UInt8((value >> 8) & 0xFF))
+        buffer.append(UInt8(truncatingIfNeeded: value))
+        buffer.append(UInt8(truncatingIfNeeded: value &>> 8))
         return self
     }
 
     /// Write an unsigned 32-bit integer (little-endian)
+    @inlinable
     @discardableResult
     public func writeU32(_ value: UInt32) -> BcsSerializer {
-        buffer.append(UInt8(value & 0xFF))
-        buffer.append(UInt8((value >> 8) & 0xFF))
-        buffer.append(UInt8((value >> 16) & 0xFF))
-        buffer.append(UInt8((value >> 24) & 0xFF))
+        buffer.append(UInt8(truncatingIfNeeded: value))
+        buffer.append(UInt8(truncatingIfNeeded: value &>> 8))
+        buffer.append(UInt8(truncatingIfNeeded: value &>> 16))
+        buffer.append(UInt8(truncatingIfNeeded: value &>> 24))
         return self
     }
 
     /// Write an unsigned 64-bit integer (little-endian)
+    @inlinable
     @discardableResult
     public func writeU64(_ value: UInt64) -> BcsSerializer {
-        for i in 0..<8 {
-            buffer.append(UInt8((value >> (i * 8)) & 0xFF))
-        }
+        buffer.append(UInt8(truncatingIfNeeded: value))
+        buffer.append(UInt8(truncatingIfNeeded: value &>> 8))
+        buffer.append(UInt8(truncatingIfNeeded: value &>> 16))
+        buffer.append(UInt8(truncatingIfNeeded: value &>> 24))
+        buffer.append(UInt8(truncatingIfNeeded: value &>> 32))
+        buffer.append(UInt8(truncatingIfNeeded: value &>> 40))
+        buffer.append(UInt8(truncatingIfNeeded: value &>> 48))
+        buffer.append(UInt8(truncatingIfNeeded: value &>> 56))
         return self
     }
 
     /// Write an unsigned 128-bit integer (little-endian byte array)
+    @inlinable
     @discardableResult
     public func writeU128(_ value: [UInt8]) throws -> BcsSerializer {
         guard value.count == 16 else {
@@ -68,6 +82,7 @@ public final class BcsSerializer {
     }
 
     /// Write an unsigned 256-bit integer (little-endian byte array)
+    @inlinable
     @discardableResult
     public func writeU256(_ value: [UInt8]) throws -> BcsSerializer {
         guard value.count == 32 else {
@@ -80,6 +95,7 @@ public final class BcsSerializer {
     // MARK: - Signed Integers
 
     /// Write a signed 8-bit integer
+    @inlinable
     @discardableResult
     public func writeI8(_ value: Int8) -> BcsSerializer {
         buffer.append(UInt8(bitPattern: value))
@@ -87,30 +103,35 @@ public final class BcsSerializer {
     }
 
     /// Write a signed 16-bit integer (little-endian)
+    @inlinable
     @discardableResult
     public func writeI16(_ value: Int16) -> BcsSerializer {
         writeU16(UInt16(bitPattern: value))
     }
 
     /// Write a signed 32-bit integer (little-endian)
+    @inlinable
     @discardableResult
     public func writeI32(_ value: Int32) -> BcsSerializer {
         writeU32(UInt32(bitPattern: value))
     }
 
     /// Write a signed 64-bit integer (little-endian)
+    @inlinable
     @discardableResult
     public func writeI64(_ value: Int64) -> BcsSerializer {
         writeU64(UInt64(bitPattern: value))
     }
 
     /// Write a signed 128-bit integer (little-endian byte array)
+    @inlinable
     @discardableResult
     public func writeI128(_ value: [UInt8]) throws -> BcsSerializer {
         try writeU128(value)
     }
 
     /// Write a signed 256-bit integer (little-endian byte array)
+    @inlinable
     @discardableResult
     public func writeI256(_ value: [UInt8]) throws -> BcsSerializer {
         try writeU256(value)
@@ -119,16 +140,26 @@ public final class BcsSerializer {
     // MARK: - ULEB128
 
     /// Write a ULEB128-encoded length
+    @inlinable
     @discardableResult
     public func writeUleb128(_ value: UInt32) -> BcsSerializer {
-        let encoded = Uleb128.encode(value)
-        buffer.append(contentsOf: encoded)
+        // Inline ULEB128 encoding to avoid array allocation
+        var remaining = value
+        repeat {
+            var byte = UInt8(remaining & 0x7F)
+            remaining &>>= 7
+            if remaining != 0 {
+                byte |= 0x80  // Set continuation bit
+            }
+            buffer.append(byte)
+        } while remaining != 0
         return self
     }
 
     // MARK: - Bytes and Strings
 
     /// Write raw bytes (without length prefix)
+    @inlinable
     @discardableResult
     public func writeFixedBytes(_ data: [UInt8]) -> BcsSerializer {
         buffer.append(contentsOf: data)
@@ -136,6 +167,7 @@ public final class BcsSerializer {
     }
 
     /// Write bytes with ULEB128 length prefix
+    @inlinable
     @discardableResult
     public func writeBytes(_ data: [UInt8]) throws -> BcsSerializer {
         try checkSequenceLength(data.count)
@@ -145,27 +177,36 @@ public final class BcsSerializer {
     }
 
     /// Write a UTF-8 string with ULEB128 length prefix
+    @inlinable
     @discardableResult
     public func writeString(_ value: String) throws -> BcsSerializer {
-        let bytes = Array(value.utf8)
-        return try writeBytes(bytes)
+        // Use contiguousUTF8 for optimal performance when available
+        var str = value
+        return try str.withUTF8 { utf8Buffer in
+            try self.checkSequenceLength(utf8Buffer.count)
+            self.writeUleb128(UInt32(utf8Buffer.count))
+            self.buffer.append(contentsOf: utf8Buffer)
+            return self
+        }
     }
 
     // MARK: - Composite Types
 
     /// Write an optional value
+    @inlinable
     @discardableResult
     public func writeOption<T>(_ opt: T?, serializer: (BcsSerializer, T) throws -> Void) throws -> BcsSerializer {
         if let value = opt {
-            writeU8(1)
+            buffer.append(1)
             try serializer(self, value)
         } else {
-            writeU8(0)
+            buffer.append(0)
         }
         return self
     }
 
     /// Write a vector with element serializer
+    @inlinable
     @discardableResult
     public func writeVector<T>(_ values: [T], serializer: (BcsSerializer, T) throws -> Void) throws -> BcsSerializer {
         try checkSequenceLength(values.count)
@@ -186,7 +227,7 @@ public final class BcsSerializer {
         try checkSequenceLength(map.count)
 
         // Serialize all entries and sort by key bytes
-        var entries: [([UInt8], [UInt8])] = []
+        var entries: [(key: [UInt8], value: [UInt8])] = []
         entries.reserveCapacity(map.count)
 
         for (key, value) in map {
@@ -196,23 +237,24 @@ public final class BcsSerializer {
             let valueSer = BcsSerializer()
             try valueSerializer(valueSer, value)
 
-            entries.append((keySer.toBytes(), valueSer.toBytes()))
+            entries.append((key: keySer.toBytes(), value: valueSer.toBytes()))
         }
 
         // Sort by key bytes (lexicographic)
-        entries.sort { $0.0.lexicographicallyPrecedes($1.0) }
+        entries.sort { $0.key.lexicographicallyPrecedes($1.key) }
 
         // Write length and entries
         writeUleb128(UInt32(entries.count))
-        for (keyBytes, valueBytes) in entries {
-            buffer.append(contentsOf: keyBytes)
-            buffer.append(contentsOf: valueBytes)
+        for entry in entries {
+            buffer.append(contentsOf: entry.key)
+            buffer.append(contentsOf: entry.value)
         }
 
         return self
     }
 
     /// Write an enum variant index
+    @inlinable
     @discardableResult
     public func writeVariantIndex(_ index: UInt32) -> BcsSerializer {
         writeUleb128(index)
@@ -221,6 +263,7 @@ public final class BcsSerializer {
     // MARK: - Container Depth
 
     /// Enter a struct/enum container (for depth tracking)
+    @inlinable
     @discardableResult
     public func enterContainer() throws -> BcsSerializer {
         depth += 1
@@ -231,6 +274,7 @@ public final class BcsSerializer {
     }
 
     /// Leave a struct/enum container
+    @inlinable
     @discardableResult
     public func leaveContainer() -> BcsSerializer {
         depth -= 1
@@ -240,16 +284,19 @@ public final class BcsSerializer {
     // MARK: - Output
 
     /// Get the serialized bytes
+    @inlinable
     public func toBytes() -> [UInt8] {
-        buffer
+        Array(buffer)
     }
 
     /// Get the current size of the buffer
+    @inlinable
     public var size: Int {
         buffer.count
     }
 
     /// Clear the buffer
+    @inlinable
     public func clear() {
         buffer.removeAll(keepingCapacity: true)
         depth = 0
@@ -257,7 +304,8 @@ public final class BcsSerializer {
 
     // MARK: - Private
 
-    private func checkSequenceLength(_ length: Int) throws {
+    @usableFromInline
+    internal func checkSequenceLength(_ length: Int) throws {
         if length > BcsConstants.maxSequenceLength {
             throw BcsError.exceededMaxLength(length)
         }

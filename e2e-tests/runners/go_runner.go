@@ -4,14 +4,23 @@
 //
 // Reads test vectors from stdin, performs roundtrip serialization,
 // and outputs results to stdout.
+//
+// Supports two modes:
+// - Default: Roundtrip testing for correctness
+// - Benchmark (--benchmark): Performance timing
 package main
 
 import (
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/bcs-sdks/bcs-go/bcs"
 )
@@ -660,20 +669,437 @@ func processCases(cases []TestCase) []TestCase {
 	return results
 }
 
-func main() {
-	inputData, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
-		os.Exit(1)
+// Benchmark types and functions
+
+type BenchmarkSpec struct {
+	Version   string                     `json:"version"`
+	Config    BenchmarkConfig            `json:"config"`
+	Scenarios map[string]BenchmarkGroup  `json:"scenarios"`
+}
+
+type BenchmarkConfig struct {
+	DefaultIterations int `json:"default_iterations"`
+	WarmupIterations  int `json:"warmup_iterations"`
+}
+
+type BenchmarkGroup struct {
+	Description string           `json:"description"`
+	Benchmarks  []BenchmarkCase  `json:"benchmarks"`
+}
+
+type BenchmarkCase struct {
+	Name           string      `json:"name"`
+	Type           string      `json:"type"`
+	Value          interface{} `json:"value"`
+	ValueGenerator string      `json:"value_generator"`
+	Length         int         `json:"length"`
+	Char           string      `json:"char"`
+	Iterations     int         `json:"iterations"`
+}
+
+type BenchmarkResult struct {
+	Name                       string  `json:"name"`
+	Type                       string  `json:"type"`
+	Iterations                 int     `json:"iterations"`
+	SerializeAvgNs             float64 `json:"serialize_avg_ns"`
+	SerializeMinNs             float64 `json:"serialize_min_ns"`
+	SerializeMaxNs             float64 `json:"serialize_max_ns"`
+	SerializeP50Ns             float64 `json:"serialize_p50_ns"`
+	SerializeP95Ns             float64 `json:"serialize_p95_ns"`
+	DeserializeAvgNs           float64 `json:"deserialize_avg_ns"`
+	DeserializeMinNs           float64 `json:"deserialize_min_ns"`
+	DeserializeMaxNs           float64 `json:"deserialize_max_ns"`
+	DeserializeP50Ns           float64 `json:"deserialize_p50_ns"`
+	DeserializeP95Ns           float64 `json:"deserialize_p95_ns"`
+	ThroughputSerializeOpsSec  float64 `json:"throughput_serialize_ops_sec"`
+	ThroughputDeserializeOpsSec float64 `json:"throughput_deserialize_ops_sec"`
+	Error                      string  `json:"error,omitempty"`
+}
+
+type BenchmarkOutput struct {
+	Version     string            `json:"version"`
+	Description string            `json:"description"`
+	Benchmarks  []BenchmarkResult `json:"benchmarks"`
+}
+
+func computeStats(times []int64) (avg, min, max, p50, p95 float64) {
+	if len(times) == 0 {
+		return 0, 0, 0, 0, 0
 	}
 
-	var vectors TestVectors
-	if err := json.Unmarshal(inputData, &vectors); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing JSON: %v\n", err)
-		os.Exit(1)
+	sorted := make([]int64, len(times))
+	copy(sorted, times)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+
+	n := len(sorted)
+	var sum int64
+	for _, t := range sorted {
+		sum += t
 	}
 
-	output := TestVectors{
+	avg = float64(sum) / float64(n)
+	min = float64(sorted[0])
+	max = float64(sorted[n-1])
+	p50 = float64(sorted[n/2])
+	p95Idx := int(float64(n) * 0.95)
+	if p95Idx >= n {
+		p95Idx = n - 1
+	}
+	p95 = float64(sorted[p95Idx])
+
+	return avg, min, max, p50, p95
+}
+
+func generateValue(bc BenchmarkCase) interface{} {
+	if bc.Value != nil {
+		return bc.Value
+	}
+
+	length := bc.Length
+	if length == 0 {
+		length = 10
+	}
+
+	switch bc.ValueGenerator {
+	case "repeat_char":
+		char := bc.Char
+		if char == "" {
+			char = "a"
+		}
+		return strings.Repeat(char, length)
+	case "sequential_bytes", "sequential_u8":
+		// Return as []interface{} for consistency with JSON parsing
+		result := make([]interface{}, length)
+		for i := 0; i < length; i++ {
+			result[i] = float64(i % 256)
+		}
+		return result
+	case "sequential_u64":
+		result := make([]interface{}, length)
+		for i := 0; i < length; i++ {
+			result[i] = fmt.Sprintf("%d", i)
+		}
+		return result
+	case "address_bytes":
+		result := make([]interface{}, 32)
+		for i := 0; i < 31; i++ {
+			result[i] = float64(0)
+		}
+		result[31] = float64(1)
+		return result
+	}
+
+	return bc.Value
+}
+
+func serializeValue(s *bcs.Serializer, typ string, value interface{}) error {
+	switch typ {
+	case "bool":
+		s.WriteBool(value.(bool))
+	case "u8":
+		v := int(value.(float64))
+		s.WriteU8(uint8(v))
+	case "u16":
+		v := int(value.(float64))
+		s.WriteU16(uint16(v))
+	case "u32":
+		v := int64(value.(float64))
+		s.WriteU32(uint32(v))
+	case "u64":
+		var v uint64
+		switch val := value.(type) {
+		case string:
+			bi := new(big.Int)
+			bi.SetString(val, 10)
+			v = bi.Uint64()
+		case float64:
+			v = uint64(val)
+		}
+		s.WriteU64(v)
+	case "u128":
+		var str string
+		switch val := value.(type) {
+		case string:
+			str = val
+		case float64:
+			str = fmt.Sprintf("%.0f", val)
+		}
+		bi := new(big.Int)
+		bi.SetString(str, 10)
+		s.WriteU128(bi)
+	case "i8":
+		v := int(value.(float64))
+		s.WriteI8(int8(v))
+	case "i16":
+		v := int(value.(float64))
+		s.WriteI16(int16(v))
+	case "i32":
+		v := int64(value.(float64))
+		s.WriteI32(int32(v))
+	case "i64":
+		var v int64
+		switch val := value.(type) {
+		case string:
+			bi := new(big.Int)
+			bi.SetString(val, 10)
+			v = bi.Int64()
+		case float64:
+			v = int64(val)
+		}
+		s.WriteI64(v)
+	case "i128":
+		var str string
+		switch val := value.(type) {
+		case string:
+			str = val
+		case float64:
+			str = fmt.Sprintf("%.0f", val)
+		}
+		bi := new(big.Int)
+		bi.SetString(str, 10)
+		s.WriteI128(bi)
+	case "string":
+		s.WriteString(value.(string))
+	case "bytes":
+		arr := value.([]interface{})
+		data := make([]byte, len(arr))
+		for i, v := range arr {
+			data[i] = byte(v.(float64))
+		}
+		s.WriteBytes(data)
+	case "fixed_bytes":
+		arr := value.([]interface{})
+		data := make([]byte, len(arr))
+		for i, v := range arr {
+			data[i] = byte(v.(float64))
+		}
+		s.WriteFixedBytes(data, len(data))
+	case "vector<u8>":
+		arr := value.([]interface{})
+		s.WriteULEB128(uint32(len(arr)))
+		for _, v := range arr {
+			s.WriteU8(uint8(v.(float64)))
+		}
+	case "vector<u64>":
+		arr := value.([]interface{})
+		s.WriteULEB128(uint32(len(arr)))
+		for _, v := range arr {
+			var val uint64
+			switch vv := v.(type) {
+			case string:
+				bi := new(big.Int)
+				bi.SetString(vv, 10)
+				val = bi.Uint64()
+			case float64:
+				val = uint64(vv)
+			}
+			s.WriteU64(val)
+		}
+	case "vector<string>":
+		arr := value.([]interface{})
+		s.WriteULEB128(uint32(len(arr)))
+		for _, v := range arr {
+			s.WriteString(v.(string))
+		}
+	default:
+		return fmt.Errorf("unknown type: %s", typ)
+	}
+	return nil
+}
+
+func deserializeValue(d *bcs.Deserializer, typ string) (interface{}, error) {
+	switch typ {
+	case "bool":
+		return d.ReadBool()
+	case "u8":
+		return d.ReadU8()
+	case "u16":
+		return d.ReadU16()
+	case "u32":
+		return d.ReadU32()
+	case "u64":
+		return d.ReadU64()
+	case "u128":
+		return d.ReadU128()
+	case "i8":
+		return d.ReadI8()
+	case "i16":
+		return d.ReadI16()
+	case "i32":
+		return d.ReadI32()
+	case "i64":
+		return d.ReadI64()
+	case "i128":
+		return d.ReadI128()
+	case "string":
+		return d.ReadString()
+	case "bytes":
+		return d.ReadBytes()
+	case "fixed_bytes":
+		return d.ReadFixedBytes(32)
+	case "vector<u8>":
+		length, err := d.ReadULEB128()
+		if err != nil {
+			return nil, err
+		}
+		result := make([]uint8, length)
+		for i := uint32(0); i < length; i++ {
+			v, err := d.ReadU8()
+			if err != nil {
+				return nil, err
+			}
+			result[i] = v
+		}
+		return result, nil
+	case "vector<u64>":
+		length, err := d.ReadULEB128()
+		if err != nil {
+			return nil, err
+		}
+		result := make([]uint64, length)
+		for i := uint32(0); i < length; i++ {
+			v, err := d.ReadU64()
+			if err != nil {
+				return nil, err
+			}
+			result[i] = v
+		}
+		return result, nil
+	case "vector<string>":
+		length, err := d.ReadULEB128()
+		if err != nil {
+			return nil, err
+		}
+		result := make([]string, length)
+		for i := uint32(0); i < length; i++ {
+			v, err := d.ReadString()
+			if err != nil {
+				return nil, err
+			}
+			result[i] = v
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("unknown type: %s", typ)
+	}
+}
+
+func runBenchmark(spec BenchmarkSpec) BenchmarkOutput {
+	output := BenchmarkOutput{
+		Version:     spec.Version,
+		Description: "Go benchmark results",
+		Benchmarks:  []BenchmarkResult{},
+	}
+
+	defaultIterations := spec.Config.DefaultIterations
+	if defaultIterations == 0 {
+		defaultIterations = 1000
+	}
+	warmup := spec.Config.WarmupIterations
+	if warmup == 0 {
+		warmup = 10
+	}
+
+	for _, group := range spec.Scenarios {
+		for _, bc := range group.Benchmarks {
+			iterations := bc.Iterations
+			if iterations == 0 {
+				iterations = defaultIterations
+			}
+
+			value := generateValue(bc)
+			if value == nil {
+				output.Benchmarks = append(output.Benchmarks, BenchmarkResult{
+					Name:       bc.Name,
+					Type:       bc.Type,
+					Iterations: iterations,
+					Error:      "could not generate value",
+				})
+				continue
+			}
+
+			// Serialize to get bytes for deserialize benchmark
+			s := bcs.NewSerializer()
+			if err := serializeValue(s, bc.Type, value); err != nil {
+				output.Benchmarks = append(output.Benchmarks, BenchmarkResult{
+					Name:       bc.Name,
+					Type:       bc.Type,
+					Iterations: iterations,
+					Error:      err.Error(),
+				})
+				continue
+			}
+			bcsBytes := s.Bytes()
+
+			// Warmup serialize
+			for i := 0; i < warmup; i++ {
+				ws := bcs.NewSerializer()
+				serializeValue(ws, bc.Type, value)
+				_ = ws.Bytes()
+			}
+
+			// Benchmark serialize
+			serTimes := make([]int64, iterations)
+			for i := 0; i < iterations; i++ {
+				start := time.Now()
+				bs := bcs.NewSerializer()
+				serializeValue(bs, bc.Type, value)
+				_ = bs.Bytes()
+				serTimes[i] = time.Since(start).Nanoseconds()
+			}
+
+			// Warmup deserialize
+			for i := 0; i < warmup; i++ {
+				wd := bcs.NewDeserializer(bcsBytes)
+				deserializeValue(wd, bc.Type)
+			}
+
+			// Benchmark deserialize
+			deTimes := make([]int64, iterations)
+			for i := 0; i < iterations; i++ {
+				start := time.Now()
+				bd := bcs.NewDeserializer(bcsBytes)
+				deserializeValue(bd, bc.Type)
+				deTimes[i] = time.Since(start).Nanoseconds()
+			}
+
+			serAvg, serMin, serMax, serP50, serP95 := computeStats(serTimes)
+			deAvg, deMin, deMax, deP50, deP95 := computeStats(deTimes)
+
+			serThroughput := 0.0
+			if serAvg > 0 {
+				serThroughput = 1_000_000_000.0 / serAvg
+			}
+			deThroughput := 0.0
+			if deAvg > 0 {
+				deThroughput = 1_000_000_000.0 / deAvg
+			}
+
+			output.Benchmarks = append(output.Benchmarks, BenchmarkResult{
+				Name:                        bc.Name,
+				Type:                        bc.Type,
+				Iterations:                  iterations,
+				SerializeAvgNs:              serAvg,
+				SerializeMinNs:              serMin,
+				SerializeMaxNs:              serMax,
+				SerializeP50Ns:              serP50,
+				SerializeP95Ns:              serP95,
+				DeserializeAvgNs:            deAvg,
+				DeserializeMinNs:            deMin,
+				DeserializeMaxNs:            deMax,
+				DeserializeP50Ns:            deP50,
+				DeserializeP95Ns:            deP95,
+				ThroughputSerializeOpsSec:   serThroughput,
+				ThroughputDeserializeOpsSec: deThroughput,
+			})
+		}
+	}
+
+	return output
+}
+
+func runRoundtrip(vectors TestVectors) TestVectors {
+	return TestVectors{
 		Version:     vectors.Version,
 		Description: "Go roundtrip results",
 		Primitives:  processCases(vectors.Primitives),
@@ -684,8 +1110,38 @@ func main() {
 		Structs:     processCases(vectors.Structs),
 		Complex:     processCases(vectors.Complex),
 	}
+}
 
-	outputJSON, err := json.MarshalIndent(output, "", "  ")
+func main() {
+	benchmarkMode := flag.Bool("benchmark", false, "Run benchmarks instead of correctness tests")
+	flag.Parse()
+
+	inputData, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
+		os.Exit(1)
+	}
+
+	var outputJSON []byte
+
+	if *benchmarkMode {
+		var spec BenchmarkSpec
+		if err := json.Unmarshal(inputData, &spec); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing JSON: %v\n", err)
+			os.Exit(1)
+		}
+		output := runBenchmark(spec)
+		outputJSON, err = json.MarshalIndent(output, "", "  ")
+	} else {
+		var vectors TestVectors
+		if err := json.Unmarshal(inputData, &vectors); err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing JSON: %v\n", err)
+			os.Exit(1)
+		}
+		output := runRoundtrip(vectors)
+		outputJSON, err = json.MarshalIndent(output, "", "  ")
+	}
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error marshaling JSON: %v\n", err)
 		os.Exit(1)

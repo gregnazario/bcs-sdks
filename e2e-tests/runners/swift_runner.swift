@@ -410,9 +410,231 @@ func processTestCase(_ tc: TestCase) -> TestCase {
     return result
 }
 
+// Benchmark support
+import Foundation
+
+struct BenchmarkOutput: Codable {
+    let version: String
+    let description: String
+    let benchmarks: [BenchmarkResultFull]
+}
+
+struct BenchmarkResultFull: Codable {
+    let name: String
+    let type: String
+    let iterations: Int
+    var serialize_avg_ns: Double = 0
+    var serialize_min_ns: Double = 0
+    var serialize_max_ns: Double = 0
+    var serialize_p50_ns: Double = 0
+    var serialize_p95_ns: Double = 0
+    var deserialize_avg_ns: Double = 0
+    var deserialize_min_ns: Double = 0
+    var deserialize_max_ns: Double = 0
+    var deserialize_p50_ns: Double = 0
+    var deserialize_p95_ns: Double = 0
+    var throughput_serialize_ops_sec: Double = 0
+    var throughput_deserialize_ops_sec: Double = 0
+    var error: String?
+}
+
+struct BenchmarkSpec: Codable {
+    struct Config: Codable {
+        let default_iterations: Int?
+        let warmup_iterations: Int?
+    }
+    struct Group: Codable {
+        let benchmarks: [BenchCase]?
+    }
+    struct BenchCase: Codable {
+        let name: String
+        let type: String
+        let value: AnyCodable?
+        let value_generator: String?
+        let length: Int?
+        let char: String?
+        let iterations: Int?
+    }
+    let version: String?
+    let config: Config?
+    let scenarios: [String: Group]?
+}
+
+func computeStats(_ times: [UInt64]) -> (avg: Double, min: Double, max: Double, p50: Double, p95: Double) {
+    guard !times.isEmpty else { return (0, 0, 0, 0, 0) }
+    let sorted = times.sorted()
+    let n = sorted.count
+    let sum = times.reduce(0, +)
+    return (
+        Double(sum) / Double(n),
+        Double(sorted[0]),
+        Double(sorted[n-1]),
+        Double(sorted[n/2]),
+        Double(sorted[Int(Double(n) * 0.95)])
+    )
+}
+
+func generateBenchValue(_ bc: BenchmarkSpec.BenchCase) -> Any? {
+    if let v = bc.value { return v.value }
+    let length = bc.length ?? 10
+    switch bc.value_generator {
+    case "repeat_char":
+        let c = bc.char ?? "a"
+        return String(repeating: c, count: length)
+    case "sequential_bytes", "sequential_u8":
+        return (0..<length).map { $0 % 256 }
+    case "sequential_u64":
+        return (0..<length).map { String($0) }
+    case "address_bytes":
+        return Array(repeating: 0, count: 31) + [1]
+    default:
+        return bc.value?.value
+    }
+}
+
+func serializeBenchValue(_ s: inout BcsSerializer, _ type: String, _ value: Any?) {
+    switch type {
+    case "bool": s.writeBool(value as? Bool ?? false)
+    case "u8": s.writeU8(UInt8(value as? Int ?? 0))
+    case "u16": s.writeU16(UInt16(value as? Int ?? 0))
+    case "u32": s.writeU32(UInt32(value as? Int ?? 0))
+    case "u64":
+        if let str = value as? String { s.writeU64(UInt64(str) ?? 0) }
+        else { s.writeU64(UInt64(value as? Int ?? 0)) }
+    case "string": s.writeString(value as? String ?? "")
+    case "vector<u8>", "bytes":
+        let arr = value as? [Int] ?? []
+        s.writeUleb128(UInt32(arr.count))
+        for v in arr { s.writeU8(UInt8(v)) }
+    case "vector<u64>":
+        let arr = value as? [Any] ?? []
+        s.writeUleb128(UInt32(arr.count))
+        for v in arr {
+            if let str = v as? String { s.writeU64(UInt64(str) ?? 0) }
+            else { s.writeU64(UInt64(v as? Int ?? 0)) }
+        }
+    case "vector<string>":
+        let arr = value as? [String] ?? []
+        s.writeUleb128(UInt32(arr.count))
+        for v in arr { s.writeString(v) }
+    default: break
+    }
+}
+
+func deserializeBenchValue(_ d: inout BcsDeserializer, _ type: String) {
+    switch type {
+    case "bool": _ = try? d.readBool()
+    case "u8": _ = try? d.readU8()
+    case "u16": _ = try? d.readU16()
+    case "u32": _ = try? d.readU32()
+    case "u64": _ = try? d.readU64()
+    case "string": _ = try? d.readString()
+    case "vector<u8>", "bytes":
+        if let len = try? d.readUleb128() {
+            for _ in 0..<len { _ = try? d.readU8() }
+        }
+    case "vector<u64>":
+        if let len = try? d.readUleb128() {
+            for _ in 0..<len { _ = try? d.readU64() }
+        }
+    case "vector<string>":
+        if let len = try? d.readUleb128() {
+            for _ in 0..<len { _ = try? d.readString() }
+        }
+    default: break
+    }
+}
+
+func runBenchmarks(_ data: Data) -> BenchmarkOutput {
+    guard let spec = try? JSONDecoder().decode(BenchmarkSpec.self, from: data) else {
+        return BenchmarkOutput(version: "1.0.0", description: "Swift benchmark results", benchmarks: [])
+    }
+    
+    let defaultIterations = spec.config?.default_iterations ?? 1000
+    let warmup = spec.config?.warmup_iterations ?? 10
+    
+    var results: [BenchmarkResultFull] = []
+    
+    for (_, group) in spec.scenarios ?? [:] {
+        for bc in group.benchmarks ?? [] {
+            let iterations = bc.iterations ?? defaultIterations
+            let value = generateBenchValue(bc)
+            
+            // Serialize to get bytes
+            var ser = BcsSerializer()
+            serializeBenchValue(&ser, bc.type, value)
+            let bcsBytes = ser.getBytes()
+            
+            // Warmup serialize
+            for _ in 0..<warmup {
+                var ws = BcsSerializer()
+                serializeBenchValue(&ws, bc.type, value)
+                _ = ws.getBytes()
+            }
+            
+            // Benchmark serialize
+            var serTimes: [UInt64] = []
+            for _ in 0..<iterations {
+                let start = DispatchTime.now().uptimeNanoseconds
+                var bs = BcsSerializer()
+                serializeBenchValue(&bs, bc.type, value)
+                _ = bs.getBytes()
+                serTimes.append(DispatchTime.now().uptimeNanoseconds - start)
+            }
+            
+            // Warmup deserialize
+            for _ in 0..<warmup {
+                var wd = BcsDeserializer(data: bcsBytes)
+                deserializeBenchValue(&wd, bc.type)
+            }
+            
+            // Benchmark deserialize
+            var deTimes: [UInt64] = []
+            for _ in 0..<iterations {
+                let start = DispatchTime.now().uptimeNanoseconds
+                var bd = BcsDeserializer(data: bcsBytes)
+                deserializeBenchValue(&bd, bc.type)
+                deTimes.append(DispatchTime.now().uptimeNanoseconds - start)
+            }
+            
+            let serStats = computeStats(serTimes)
+            let deStats = computeStats(deTimes)
+            
+            var result = BenchmarkResultFull(name: bc.name, type: bc.type, iterations: iterations)
+            result.serialize_avg_ns = serStats.avg
+            result.serialize_min_ns = serStats.min
+            result.serialize_max_ns = serStats.max
+            result.serialize_p50_ns = serStats.p50
+            result.serialize_p95_ns = serStats.p95
+            result.deserialize_avg_ns = deStats.avg
+            result.deserialize_min_ns = deStats.min
+            result.deserialize_max_ns = deStats.max
+            result.deserialize_p50_ns = deStats.p50
+            result.deserialize_p95_ns = deStats.p95
+            result.throughput_serialize_ops_sec = serStats.avg > 0 ? 1e9 / serStats.avg : 0
+            result.throughput_deserialize_ops_sec = deStats.avg > 0 ? 1e9 / deStats.avg : 0
+            results.append(result)
+        }
+    }
+    
+    return BenchmarkOutput(version: spec.version ?? "1.0.0", description: "Swift benchmark results", benchmarks: results)
+}
+
 // Main
 func main() {
+    let benchmarkMode = CommandLine.arguments.contains("--benchmark")
     let inputData = FileHandle.standardInput.readDataToEndOfFile()
+    
+    if benchmarkMode {
+        let output = runBenchmarks(inputData)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        if let jsonData = try? encoder.encode(output),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            print(jsonString)
+        }
+        return
+    }
     
     guard let vectors = try? JSONDecoder().decode(TestVectors.self, from: inputData) else {
         fputs("Error: Failed to parse input JSON\n", stderr)

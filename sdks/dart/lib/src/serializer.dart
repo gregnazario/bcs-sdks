@@ -6,8 +6,30 @@ import 'uleb128.dart';
 
 /// BCS Serializer - Manual serialization API
 class BcsSerializer {
-  final BytesBuilder _buffer = BytesBuilder();
+  /// Internal buffer with dynamic growth
+  Uint8List _buffer;
+  int _size = 0;
   int _depth = 0;
+
+  /// Scratch buffer for ULEB128 encoding
+  final Uint8List _ulebBuffer = Uint8List(Uleb128.maxBytes);
+
+  /// Create a serializer with optional initial capacity
+  BcsSerializer([int initialCapacity = 256])
+      : _buffer = Uint8List(initialCapacity);
+
+  /// Ensure buffer has capacity for [needed] more bytes
+  void _ensureCapacity(int needed) {
+    final required = _size + needed;
+    if (required <= _buffer.length) return;
+
+    // Grow by doubling or to required size, whichever is larger
+    var newCapacity = _buffer.length * 2;
+    if (newCapacity < required) newCapacity = required;
+    final newBuffer = Uint8List(newCapacity);
+    newBuffer.setRange(0, _size, _buffer);
+    _buffer = newBuffer;
+  }
 
   // ==========================================================================
   // BOOLEAN
@@ -15,7 +37,8 @@ class BcsSerializer {
 
   /// Write a boolean value
   BcsSerializer writeBool(bool value) {
-    _buffer.addByte(value ? 1 : 0);
+    _ensureCapacity(1);
+    _buffer[_size++] = value ? 1 : 0;
     return this;
   }
 
@@ -28,7 +51,8 @@ class BcsSerializer {
     if (value < 0 || value > u8Max) {
       throw BcsError.integerOutOfRange('u8');
     }
-    _buffer.addByte(value);
+    _ensureCapacity(1);
+    _buffer[_size++] = value;
     return this;
   }
 
@@ -37,9 +61,10 @@ class BcsSerializer {
     if (value < 0 || value > u16Max) {
       throw BcsError.integerOutOfRange('u16');
     }
-    _buffer
-      ..addByte(value & 0xFF)
-      ..addByte((value >> 8) & 0xFF);
+    _ensureCapacity(2);
+    _buffer[_size] = value & 0xFF;
+    _buffer[_size + 1] = (value >> 8) & 0xFF;
+    _size += 2;
     return this;
   }
 
@@ -48,9 +73,13 @@ class BcsSerializer {
     if (value < 0 || value > u32Max) {
       throw BcsError.integerOutOfRange('u32');
     }
-    for (var i = 0; i < 4; i++) {
-      _buffer.addByte((value >> (i * 8)) & 0xFF);
-    }
+    _ensureCapacity(4);
+    // Unrolled for performance
+    _buffer[_size] = value & 0xFF;
+    _buffer[_size + 1] = (value >> 8) & 0xFF;
+    _buffer[_size + 2] = (value >> 16) & 0xFF;
+    _buffer[_size + 3] = (value >> 24) & 0xFF;
+    _size += 4;
     return this;
   }
 
@@ -65,6 +94,20 @@ class BcsSerializer {
 
   /// Write an unsigned 64-bit integer from int (little-endian)
   BcsSerializer writeU64Int(int value) {
+    // Optimize: write int directly for small values
+    if (value >= 0) {
+      _ensureCapacity(8);
+      _buffer[_size] = value & 0xFF;
+      _buffer[_size + 1] = (value >> 8) & 0xFF;
+      _buffer[_size + 2] = (value >> 16) & 0xFF;
+      _buffer[_size + 3] = (value >> 24) & 0xFF;
+      _buffer[_size + 4] = (value >> 32) & 0xFF;
+      _buffer[_size + 5] = (value >> 40) & 0xFF;
+      _buffer[_size + 6] = (value >> 48) & 0xFF;
+      _buffer[_size + 7] = (value >> 56) & 0xFF;
+      _size += 8;
+      return this;
+    }
     return writeU64(BigInt.from(value));
   }
 
@@ -95,7 +138,8 @@ class BcsSerializer {
     if (value < i8Min || value > i8Max) {
       throw BcsError.integerOutOfRange('i8');
     }
-    _buffer.addByte(value & 0xFF);
+    _ensureCapacity(1);
+    _buffer[_size++] = value & 0xFF;
     return this;
   }
 
@@ -105,9 +149,10 @@ class BcsSerializer {
       throw BcsError.integerOutOfRange('i16');
     }
     final unsigned = value & 0xFFFF;
-    _buffer
-      ..addByte(unsigned & 0xFF)
-      ..addByte((unsigned >> 8) & 0xFF);
+    _ensureCapacity(2);
+    _buffer[_size] = unsigned & 0xFF;
+    _buffer[_size + 1] = (unsigned >> 8) & 0xFF;
+    _size += 2;
     return this;
   }
 
@@ -117,9 +162,12 @@ class BcsSerializer {
       throw BcsError.integerOutOfRange('i32');
     }
     final unsigned = value & 0xFFFFFFFF;
-    for (var i = 0; i < 4; i++) {
-      _buffer.addByte((unsigned >> (i * 8)) & 0xFF);
-    }
+    _ensureCapacity(4);
+    _buffer[_size] = unsigned & 0xFF;
+    _buffer[_size + 1] = (unsigned >> 8) & 0xFF;
+    _buffer[_size + 2] = (unsigned >> 16) & 0xFF;
+    _buffer[_size + 3] = (unsigned >> 24) & 0xFF;
+    _size += 4;
     return this;
   }
 
@@ -156,7 +204,17 @@ class BcsSerializer {
 
   /// Write a ULEB128-encoded length
   BcsSerializer writeUleb128(int value) {
-    _buffer.add(Uleb128.encode(value));
+    // Fast path for small values (0-127)
+    if (value < 0x80) {
+      _ensureCapacity(1);
+      _buffer[_size++] = value;
+      return this;
+    }
+    // Use scratch buffer for larger values
+    final len = Uleb128.encodeInto(value, _ulebBuffer);
+    _ensureCapacity(len);
+    _buffer.setRange(_size, _size + len, _ulebBuffer);
+    _size += len;
     return this;
   }
 
@@ -166,15 +224,22 @@ class BcsSerializer {
 
   /// Write fixed-length bytes (without length prefix)
   BcsSerializer writeFixedBytes(Uint8List data) {
-    _buffer.add(data);
+    final len = data.length;
+    _ensureCapacity(len);
+    _buffer.setRange(_size, _size + len, data);
+    _size += len;
     return this;
   }
 
   /// Write bytes with ULEB128 length prefix
   BcsSerializer writeBytes(Uint8List data) {
     _checkSequenceLength(data.length);
+    // Pre-calculate total size needed
+    final ulebSize = Uleb128.encodedSize(data.length);
+    _ensureCapacity(ulebSize + data.length);
     writeUleb128(data.length);
-    _buffer.add(data);
+    _buffer.setRange(_size, _size + data.length, data);
+    _size += data.length;
     return this;
   }
 
@@ -182,8 +247,11 @@ class BcsSerializer {
   BcsSerializer writeString(String value) {
     final bytes = utf8.encode(value);
     _checkSequenceLength(bytes.length);
+    final ulebSize = Uleb128.encodedSize(bytes.length);
+    _ensureCapacity(ulebSize + bytes.length);
     writeUleb128(bytes.length);
-    _buffer.add(bytes);
+    _buffer.setRange(_size, _size + bytes.length, bytes);
+    _size += bytes.length;
     return this;
   }
 
@@ -197,9 +265,11 @@ class BcsSerializer {
     void Function(BcsSerializer, T) serializer,
   ) {
     if (value == null) {
-      _buffer.addByte(0);
+      _ensureCapacity(1);
+      _buffer[_size++] = 0;
     } else {
-      _buffer.addByte(1);
+      _ensureCapacity(1);
+      _buffer[_size++] = 1;
       serializer(this, value);
     }
     return this;
@@ -240,7 +310,7 @@ class BcsSerializer {
     // Write length and entries
     writeUleb128(entries.length);
     for (final (keyBytes, _, value) in entries) {
-      _buffer.add(keyBytes);
+      writeFixedBytes(keyBytes);
       valueSerializer(this, value);
     }
 
@@ -287,15 +357,15 @@ class BcsSerializer {
 
   /// Get the serialized bytes
   Uint8List toBytes() {
-    return _buffer.toBytes();
+    return Uint8List.sublistView(_buffer, 0, _size);
   }
 
   /// Get the current size of the buffer
-  int get size => _buffer.length;
+  int get size => _size;
 
   /// Clear the buffer
   void clear() {
-    _buffer.clear();
+    _size = 0;
     _depth = 0;
   }
 
@@ -322,11 +392,16 @@ class BcsSerializer {
     }
   }
 
+  /// Optimized BigInt write using direct byte extraction
   void _writeBigIntLE(BigInt value, int byteLength) {
+    _ensureCapacity(byteLength);
     final mask = BigInt.from(0xFF);
+    var v = value;
     for (var i = 0; i < byteLength; i++) {
-      _buffer.addByte(((value >> (i * 8)) & mask).toInt());
+      _buffer[_size + i] = (v & mask).toInt();
+      v >>= 8;
     }
+    _size += byteLength;
   }
 
   void _writeSignedBigIntLE(BigInt value, int byteLength) {

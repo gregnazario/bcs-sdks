@@ -1,7 +1,5 @@
 package com.bcs;
 
-import java.io.ByteArrayOutputStream;
-
 /**
  * ULEB128 encoding and decoding for BCS.
  *
@@ -33,7 +31,17 @@ public final class Uleb128 {
             throw new IllegalArgumentException("ULEB128 value exceeds u32 max: " + value);
         }
 
-        ByteArrayOutputStream out = new ByteArrayOutputStream(5);
+        // Fast path for small values (most common case)
+        if (value < 0x80) {
+            return new byte[] {(byte) value};
+        }
+        if (value < 0x4000) {
+            return new byte[] {(byte) ((value & 0x7F) | 0x80), (byte) (value >>> 7)};
+        }
+
+        // General case: use fixed-size array (max 5 bytes for u32)
+        byte[] buf = new byte[5];
+        int len = 0;
         long remaining = value;
 
         do {
@@ -42,10 +50,44 @@ public final class Uleb128 {
             if (remaining != 0) {
                 byteVal |= 0x80;
             }
-            out.write(byteVal);
+            buf[len++] = (byte) byteVal;
         } while (remaining != 0);
 
-        return out.toByteArray();
+        // Return exact-sized array
+        if (len == 5) {
+            return buf;
+        }
+        byte[] result = new byte[len];
+        System.arraycopy(buf, 0, result, 0, len);
+        return result;
+    }
+
+    /**
+     * Encode a ULEB128 value directly into a byte array.
+     *
+     * @param value the value to encode
+     * @param dest the destination array
+     * @param offset the offset to write at
+     * @return the number of bytes written
+     */
+    public static int encodeTo(long value, byte[] dest, int offset) {
+        if (value < 0 || value > MAX_U32) {
+            throw new IllegalArgumentException("ULEB128 value out of range: " + value);
+        }
+
+        int pos = offset;
+        long remaining = value;
+
+        do {
+            int byteVal = (int) (remaining & 0x7F);
+            remaining >>>= 7;
+            if (remaining != 0) {
+                byteVal |= 0x80;
+            }
+            dest[pos++] = (byte) byteVal;
+        } while (remaining != 0);
+
+        return pos - offset;
     }
 
     /**

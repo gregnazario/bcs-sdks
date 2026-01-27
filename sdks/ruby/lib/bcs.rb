@@ -30,8 +30,54 @@ require_relative "bcs/deserializer"
 #   flag = des.read_bool
 #   des.check_end
 #
+# @example Using object pooling for high-throughput scenarios
+#   # Acquire from pool
+#   ser = BCS.acquire_serializer
+#   ser.write_u64(12345)
+#   bytes = ser.to_bytes
+#   BCS.release_serializer(ser)  # Return to pool
+#
 module BCS
+  # Simple object pool for Serializers (thread-safe via Mutex)
+  @serializer_pool = []
+  @serializer_pool_mutex = Mutex.new
+  @serializer_pool_max_size = 16
+
   class << self
+    # Acquire a Serializer from the pool (or create new if pool is empty)
+    # @param capacity [Integer] Initial buffer capacity
+    # @return [Serializer] A serializer instance
+    def acquire_serializer(capacity: Serializer::DEFAULT_CAPACITY)
+      @serializer_pool_mutex.synchronize do
+        ser = @serializer_pool.pop
+        return ser if ser
+
+        Serializer.new(capacity: capacity)
+      end
+    end
+
+    # Release a Serializer back to the pool for reuse
+    # @param serializer [Serializer] The serializer to release
+    # @return [void]
+    def release_serializer(serializer)
+      serializer.clear
+      @serializer_pool_mutex.synchronize do
+        @serializer_pool << serializer if @serializer_pool.size < @serializer_pool_max_size
+      end
+    end
+
+    # Use a pooled serializer with a block (automatically released)
+    # @param capacity [Integer] Initial buffer capacity
+    # @yield [Serializer] The serializer to use
+    # @return [Object] The return value of the block
+    def with_serializer(capacity: Serializer::DEFAULT_CAPACITY)
+      ser = acquire_serializer(capacity: capacity)
+      begin
+        yield ser
+      ensure
+        release_serializer(ser)
+      end
+    end
     # Convenience methods for single-value serialization
 
     def serialize_u8(value)

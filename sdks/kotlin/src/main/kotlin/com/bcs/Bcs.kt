@@ -43,17 +43,49 @@ inline fun <T> bcsDeserialize(data: ByteArray, block: BcsDeserializer.() -> T): 
     }
 }
 
-/**
- * Convert a hex string to bytes
- */
-fun String.hexToBytes(): ByteArray {
-    require(length % 2 == 0) { "Hex string must have even length" }
-    return ByteArray(length / 2) { i ->
-        substring(i * 2, i * 2 + 2).toInt(16).toByte()
-    }
+// Lookup table for hex encoding (avoids string formatting overhead)
+private val HEX_CHARS = "0123456789abcdef".toCharArray()
+private val HEX_DECODE = IntArray(128) { -1 }.apply {
+    for (i in '0'.code..'9'.code) this[i] = i - '0'.code
+    for (i in 'a'.code..'f'.code) this[i] = i - 'a'.code + 10
+    for (i in 'A'.code..'F'.code) this[i] = i - 'A'.code + 10
 }
 
 /**
- * Convert bytes to hex string
+ * Convert a hex string to bytes (optimized with lookup table)
  */
-fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+fun String.hexToBytes(): ByteArray {
+    require(length % 2 == 0) { "Hex string must have even length" }
+    val result = ByteArray(length / 2)
+    for (i in result.indices) {
+        val high = HEX_DECODE[this[i * 2].code]
+        val low = HEX_DECODE[this[i * 2 + 1].code]
+        require(high >= 0 && low >= 0) { "Invalid hex character" }
+        result[i] = ((high shl 4) or low).toByte()
+    }
+    return result
+}
+
+/**
+ * Convert bytes to hex string (optimized with lookup table)
+ */
+fun ByteArray.toHex(): String {
+    val chars = CharArray(size * 2)
+    for (i in indices) {
+        val b = this[i].toInt() and 0xFF
+        chars[i * 2] = HEX_CHARS[b shr 4]
+        chars[i * 2 + 1] = HEX_CHARS[b and 0x0F]
+    }
+    return String(chars)
+}
+
+/**
+ * Convert bytes to hex string into a pre-allocated StringBuilder
+ */
+fun ByteArray.appendHexTo(sb: StringBuilder) {
+    for (b in this) {
+        val v = b.toInt() and 0xFF
+        sb.append(HEX_CHARS[v shr 4])
+        sb.append(HEX_CHARS[v and 0x0F])
+    }
+}

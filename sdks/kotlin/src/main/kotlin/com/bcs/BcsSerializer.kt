@@ -4,14 +4,35 @@
 package com.bcs
 
 import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 
 /**
  * BCS Serializer for manual serialization
+ * 
+ * Optimized for performance with:
+ * - Pre-allocated buffers for integer writes
+ * - Fast path for common ULEB128 values
+ * - Direct byte array operations where possible
  */
-class BcsSerializer {
-    private val buffer = ByteArrayOutputStream()
+class BcsSerializer private constructor(initialCapacity: Int) {
+    private val buffer = ByteArrayOutputStream(initialCapacity)
     private var depth = 0
+    
+    // Pre-allocated buffers for integer serialization (avoids allocations)
+    private val intBuffer = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN)
+
+    constructor() : this(DEFAULT_CAPACITY)
+
+    companion object {
+        /** Default initial buffer capacity */
+        const val DEFAULT_CAPACITY = 256
+        
+        /** Create serializer with custom initial capacity */
+        @JvmStatic
+        fun withCapacity(capacity: Int): BcsSerializer = BcsSerializer(capacity)
+    }
 
     // =========================================================================
     // Boolean
@@ -23,7 +44,7 @@ class BcsSerializer {
     }
 
     // =========================================================================
-    // Unsigned Integers
+    // Unsigned Integers (optimized with ByteBuffer)
     // =========================================================================
 
     fun writeU8(value: Int): BcsSerializer {
@@ -34,28 +55,29 @@ class BcsSerializer {
 
     fun writeU16(value: Int): BcsSerializer {
         require(value in 0..65535) { "u16 value out of range: $value" }
-        buffer.write(value and 0xFF)
-        buffer.write((value shr 8) and 0xFF)
+        intBuffer.clear()
+        intBuffer.putShort(value.toShort())
+        buffer.write(intBuffer.array(), 0, 2)
         return this
     }
 
     fun writeU32(value: Long): BcsSerializer {
         require(value in 0..0xFFFFFFFFL) { "u32 value out of range: $value" }
-        for (i in 0 until 4) {
-            buffer.write(((value shr (i * 8)) and 0xFF).toInt())
-        }
+        intBuffer.clear()
+        intBuffer.putInt(value.toInt())
+        buffer.write(intBuffer.array(), 0, 4)
         return this
     }
 
     fun writeU64(value: Long): BcsSerializer {
-        for (i in 0 until 8) {
-            buffer.write(((value shr (i * 8)) and 0xFF).toInt())
-        }
+        intBuffer.clear()
+        intBuffer.putLong(value)
+        buffer.write(intBuffer.array(), 0, 8)
         return this
     }
 
     // =========================================================================
-    // Signed Integers
+    // Signed Integers (optimized with ByteBuffer)
     // =========================================================================
 
     fun writeI8(value: Int): BcsSerializer {
@@ -66,37 +88,46 @@ class BcsSerializer {
 
     fun writeI16(value: Int): BcsSerializer {
         require(value in -32768..32767) { "i16 value out of range: $value" }
-        val unsigned = value and 0xFFFF
-        buffer.write(unsigned and 0xFF)
-        buffer.write((unsigned shr 8) and 0xFF)
+        intBuffer.clear()
+        intBuffer.putShort(value.toShort())
+        buffer.write(intBuffer.array(), 0, 2)
         return this
     }
 
     fun writeI32(value: Int): BcsSerializer {
-        val unsigned = value.toLong() and 0xFFFFFFFFL
-        for (i in 0 until 4) {
-            buffer.write(((unsigned shr (i * 8)) and 0xFF).toInt())
-        }
+        intBuffer.clear()
+        intBuffer.putInt(value)
+        buffer.write(intBuffer.array(), 0, 4)
         return this
     }
 
     fun writeI64(value: Long): BcsSerializer {
-        for (i in 0 until 8) {
-            buffer.write(((value shr (i * 8)) and 0xFF).toInt())
-        }
+        intBuffer.clear()
+        intBuffer.putLong(value)
+        buffer.write(intBuffer.array(), 0, 8)
         return this
     }
 
     // =========================================================================
-    // ULEB128
+    // ULEB128 (with fast path for common small values)
     // =========================================================================
 
     fun writeUleb128(value: Int): BcsSerializer {
+        // Fast path for single-byte values (0-127)
+        if (value >= 0 && value < 0x80) {
+            buffer.write(value)
+            return this
+        }
         buffer.write(Uleb128.encode(value))
         return this
     }
 
     fun writeUleb128(value: Long): BcsSerializer {
+        // Fast path for single-byte values (0-127)
+        if (value >= 0 && value < 0x80) {
+            buffer.write(value.toInt())
+            return this
+        }
         buffer.write(Uleb128.encode(value))
         return this
     }
@@ -107,6 +138,11 @@ class BcsSerializer {
 
     fun writeFixedBytes(data: ByteArray, length: Int): BcsSerializer {
         require(data.size == length) { "Expected $length bytes, got ${data.size}" }
+        buffer.write(data)
+        return this
+    }
+    
+    fun writeFixedBytes(data: ByteArray): BcsSerializer {
         buffer.write(data)
         return this
     }
@@ -123,6 +159,56 @@ class BcsSerializer {
         checkSequenceLength(bytes.size)
         writeUleb128(bytes.size)
         buffer.write(bytes)
+        return this
+    }
+    
+    // =========================================================================
+    // Batch Operations (optimized for vectors of primitives)
+    // =========================================================================
+    
+    /**
+     * Write a vector of u8 values efficiently (writes length then raw bytes)
+     */
+    fun writeU8Vector(values: ByteArray): BcsSerializer {
+        checkSequenceLength(values.size)
+        writeUleb128(values.size)
+        buffer.write(values)
+        return this
+    }
+    
+    /**
+     * Write a vector of u16 values efficiently
+     */
+    fun writeU16Vector(values: ShortArray): BcsSerializer {
+        checkSequenceLength(values.size)
+        writeUleb128(values.size)
+        val buf = ByteBuffer.allocate(values.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+        for (v in values) buf.putShort(v)
+        buffer.write(buf.array())
+        return this
+    }
+    
+    /**
+     * Write a vector of u32 values efficiently
+     */
+    fun writeU32Vector(values: IntArray): BcsSerializer {
+        checkSequenceLength(values.size)
+        writeUleb128(values.size)
+        val buf = ByteBuffer.allocate(values.size * 4).order(ByteOrder.LITTLE_ENDIAN)
+        for (v in values) buf.putInt(v)
+        buffer.write(buf.array())
+        return this
+    }
+    
+    /**
+     * Write a vector of u64 values efficiently
+     */
+    fun writeU64Vector(values: LongArray): BcsSerializer {
+        checkSequenceLength(values.size)
+        writeUleb128(values.size)
+        val buf = ByteBuffer.allocate(values.size * 8).order(ByteOrder.LITTLE_ENDIAN)
+        for (v in values) buf.putLong(v)
+        buffer.write(buf.array())
         return this
     }
 

@@ -10,6 +10,8 @@
 #include <map>
 #include <optional>
 #include <stdexcept>
+#include <chrono>
+#include <algorithm>
 
 // Simple JSON helpers
 std::string escapeJson(const std::string& s) {
@@ -43,6 +45,40 @@ public:
     void writeI64(int64_t v) { writeU64(static_cast<uint64_t>(v)); }
     void writeI128(const std::vector<uint8_t>& bytes) { writeU128(bytes); }
     
+    void writeU128fromString(const std::string& s) {
+        // Simple u128 from decimal string - store as 16 bytes little-endian
+        uint8_t bytes[16] = {0};
+        // Very simple implementation - parse and store
+        unsigned __int128 val = 0;
+        for (char c : s) {
+            if (c >= '0' && c <= '9') {
+                val = val * 10 + (c - '0');
+            }
+        }
+        for (int i = 0; i < 16; i++) {
+            bytes[i] = (val >> (i * 8)) & 0xFF;
+        }
+        buffer.insert(buffer.end(), bytes, bytes + 16);
+    }
+    
+    void writeI128fromString(const std::string& s) {
+        // Simple i128 from decimal string
+        bool neg = !s.empty() && s[0] == '-';
+        std::string abs_s = neg ? s.substr(1) : s;
+        unsigned __int128 val = 0;
+        for (char c : abs_s) {
+            if (c >= '0' && c <= '9') {
+                val = val * 10 + (c - '0');
+            }
+        }
+        __int128 sval = neg ? -(__int128)val : (__int128)val;
+        uint8_t bytes[16];
+        for (int i = 0; i < 16; i++) {
+            bytes[i] = (sval >> (i * 8)) & 0xFF;
+        }
+        buffer.insert(buffer.end(), bytes, bytes + 16);
+    }
+    
     void writeUleb128(uint32_t v) {
         do {
             uint8_t b = v & 0x7F;
@@ -67,6 +103,7 @@ public:
     }
     
     const std::vector<uint8_t>& getBuffer() const { return buffer; }
+    std::vector<uint8_t> toBytes() const { return buffer; }
 };
 
 // BCS Deserializer
@@ -457,8 +494,287 @@ std::string processTestCase(const std::map<std::string, std::string>& tc) {
     }
 }
 
-int main() {
+// Benchmark support
+struct BenchStats {
+    double avg, min, max, p50, p95;
+};
+
+BenchStats computeStats(std::vector<long long>& times) {
+    if (times.empty()) return {0, 0, 0, 0, 0};
+    std::sort(times.begin(), times.end());
+    size_t n = times.size();
+    long long sum = 0;
+    for (auto t : times) sum += t;
+    return {
+        (double)sum / n,
+        (double)times[0],
+        (double)times[n-1],
+        (double)times[n/2],
+        (double)times[(size_t)(n * 0.95)]
+    };
+}
+
+std::string generateBenchValue(const std::map<std::string, std::string>& bc) {
+    if (bc.count("value") && bc.at("value") != "null") return bc.at("value");
+    int length = 10;
+    if (bc.count("length")) {
+        try { length = std::stoi(bc.at("length")); } catch (...) {}
+    }
+    std::string gen = bc.count("value_generator") ? bc.at("value_generator") : "";
+    if (gen == "repeat_char") {
+        std::string c = bc.count("char") ? bc.at("char") : "a";
+        if (c.size() > 2) c = c.substr(1, c.size()-2); // Remove quotes
+        std::string result = "\"";
+        for (int i = 0; i < length; i++) result += c;
+        result += "\"";
+        return result;
+    } else if (gen == "sequential_bytes" || gen == "sequential_u8") {
+        std::string result = "[";
+        for (int i = 0; i < length; i++) {
+            if (i > 0) result += ",";
+            result += std::to_string(i % 256);
+        }
+        result += "]";
+        return result;
+    } else if (gen == "sequential_u64") {
+        std::string result = "[";
+        for (int i = 0; i < length; i++) {
+            if (i > 0) result += ",";
+            result += "\"" + std::to_string(i) + "\"";
+        }
+        result += "]";
+        return result;
+    } else if (gen == "address_bytes") {
+        std::string result = "[";
+        for (int i = 0; i < 31; i++) result += "0,";
+        result += "1]";
+        return result;
+    }
+    return bc.count("value") ? bc.at("value") : "null";
+}
+
+void serializeBenchValue(BcsSerializer& s, const std::string& type, const std::string& valueJson) {
+    if (type == "bool") {
+        s.writeBool(valueJson == "true");
+    } else if (type == "u8") {
+        s.writeU8(std::stoi(valueJson));
+    } else if (type == "u16") {
+        s.writeU16(std::stoi(valueJson));
+    } else if (type == "u32") {
+        s.writeU32(std::stoul(valueJson));
+    } else if (type == "u64") {
+        std::string v = valueJson;
+        if (v.front() == '"') v = v.substr(1, v.size()-2);
+        s.writeU64(std::stoull(v));
+    } else if (type == "u128") {
+        std::string v = valueJson;
+        if (v.front() == '"') v = v.substr(1, v.size()-2);
+        s.writeU128fromString(v);
+    } else if (type == "i8") {
+        s.writeI8(std::stoi(valueJson));
+    } else if (type == "i16") {
+        s.writeI16(std::stoi(valueJson));
+    } else if (type == "i32") {
+        s.writeI32(std::stoi(valueJson));
+    } else if (type == "i64") {
+        std::string v = valueJson;
+        if (v.front() == '"') v = v.substr(1, v.size()-2);
+        s.writeI64(std::stoll(v));
+    } else if (type == "i128") {
+        std::string v = valueJson;
+        if (v.front() == '"') v = v.substr(1, v.size()-2);
+        s.writeI128fromString(v);
+    } else if (type == "string") {
+        std::string v = valueJson.substr(1, valueJson.size()-2);
+        s.writeString(v);
+    } else if (type == "bytes" || type == "vector<u8>") {
+        JsonParser p(valueJson);
+        auto arr = p.parseArray();
+        s.writeUleb128(arr.size());
+        for (auto& item : arr) s.writeU8(std::stoi(item));
+    } else if (type == "fixed_bytes") {
+        JsonParser p(valueJson);
+        auto arr = p.parseArray();
+        for (auto& item : arr) s.writeU8(std::stoi(item));
+    } else if (type == "vector<u64>") {
+        JsonParser p(valueJson);
+        auto arr = p.parseArray();
+        s.writeUleb128(arr.size());
+        for (auto& item : arr) {
+            std::string v = item;
+            if (v.front() == '"') v = v.substr(1, v.size()-2);
+            s.writeU64(std::stoull(v));
+        }
+    } else if (type == "vector<string>") {
+        JsonParser p(valueJson);
+        auto arr = p.parseArray();
+        s.writeUleb128(arr.size());
+        for (auto& item : arr) {
+            std::string v = item.substr(1, item.size()-2);
+            s.writeString(v);
+        }
+    }
+}
+
+void deserializeBenchValue(BcsDeserializer& d, const std::string& type) {
+    if (type == "bool") { d.readBool(); }
+    else if (type == "u8") { d.readU8(); }
+    else if (type == "u16") { d.readU16(); }
+    else if (type == "u32") { d.readU32(); }
+    else if (type == "u64") { d.readU64(); }
+    else if (type == "u128") { d.readU128(); }
+    else if (type == "i8") { d.readI8(); }
+    else if (type == "i16") { d.readI16(); }
+    else if (type == "i32") { d.readI32(); }
+    else if (type == "i64") { d.readI64(); }
+    else if (type == "i128") { d.readI128(); }
+    else if (type == "string") { d.readString(); }
+    else if (type == "bytes" || type == "vector<u8>") {
+        uint32_t len = d.readUleb128();
+        for (uint32_t i = 0; i < len; i++) d.readU8();
+    }
+    else if (type == "fixed_bytes") {
+        for (int i = 0; i < 32; i++) d.readU8();
+    }
+    else if (type == "vector<u64>") {
+        uint32_t len = d.readUleb128();
+        for (uint32_t i = 0; i < len; i++) d.readU64();
+    }
+    else if (type == "vector<string>") {
+        uint32_t len = d.readUleb128();
+        for (uint32_t i = 0; i < len; i++) d.readString();
+    }
+}
+
+std::string runBenchmarks(const std::string& input) {
+    JsonParser specParser(input);
+    auto spec = specParser.parseObject();
+    
+    int defaultIterations = 1000, warmup = 10;
+    if (spec.count("config")) {
+        JsonParser cfgParser(spec["config"]);
+        auto cfg = cfgParser.parseObject();
+        if (cfg.count("default_iterations")) defaultIterations = std::stoi(cfg["default_iterations"]);
+        if (cfg.count("warmup_iterations")) warmup = std::stoi(cfg["warmup_iterations"]);
+    }
+    
+    std::ostringstream out;
+    out << "{\n  \"version\": \"1.0.0\",\n  \"description\": \"C++ benchmark results\",\n  \"benchmarks\": [\n";
+    
+    bool firstResult = true;
+    if (spec.count("scenarios")) {
+        JsonParser scenParser(spec["scenarios"]);
+        auto scenarios = scenParser.parseObject();
+        
+        for (auto& [catName, catJson] : scenarios) {
+            JsonParser groupParser(catJson);
+            auto group = groupParser.parseObject();
+            if (!group.count("benchmarks")) continue;
+            
+            JsonParser benchParser(group["benchmarks"]);
+            auto benchmarks = benchParser.parseArray();
+            
+            for (auto& bcJson : benchmarks) {
+                JsonParser bcParser(bcJson);
+                auto bc = bcParser.parseObject();
+                
+                std::string name = bc.count("name") ? bc["name"] : "";
+                if (name.front() == '"') name = name.substr(1, name.size()-2);
+                std::string type = bc.count("type") ? bc["type"] : "";
+                if (type.front() == '"') type = type.substr(1, type.size()-2);
+                int iterations = bc.count("iterations") ? std::stoi(bc["iterations"]) : defaultIterations;
+                
+                if (!firstResult) out << ",\n";
+                firstResult = false;
+                
+                try {
+                    std::string valueJson = generateBenchValue(bc);
+                    
+                    // Serialize to get bytes
+                    BcsSerializer ser;
+                    serializeBenchValue(ser, type, valueJson);
+                    auto bcsBytes = ser.toBytes();
+                    
+                    // Warmup
+                    for (int i = 0; i < warmup; i++) {
+                        BcsSerializer ws;
+                        serializeBenchValue(ws, type, valueJson);
+                        ws.toBytes();
+                    }
+                    
+                    // Benchmark serialize
+                    std::vector<long long> serTimes(iterations);
+                    for (int i = 0; i < iterations; i++) {
+                        auto start = std::chrono::high_resolution_clock::now();
+                        BcsSerializer bs;
+                        serializeBenchValue(bs, type, valueJson);
+                        bs.toBytes();
+                        auto end = std::chrono::high_resolution_clock::now();
+                        serTimes[i] = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+                    }
+                    
+                    // Warmup deserialize
+                    for (int i = 0; i < warmup; i++) {
+                        BcsDeserializer wd(bcsBytes);
+                        deserializeBenchValue(wd, type);
+                    }
+                    
+                    // Benchmark deserialize
+                    std::vector<long long> deTimes(iterations);
+                    for (int i = 0; i < iterations; i++) {
+                        auto start = std::chrono::high_resolution_clock::now();
+                        BcsDeserializer bd(bcsBytes);
+                        deserializeBenchValue(bd, type);
+                        auto end = std::chrono::high_resolution_clock::now();
+                        deTimes[i] = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+                    }
+                    
+                    auto serStats = computeStats(serTimes);
+                    auto deStats = computeStats(deTimes);
+                    
+                    out << "    {\"name\": \"" << escapeJson(name) << "\", \"type\": \"" << escapeJson(type) << "\", "
+                        << "\"iterations\": " << iterations << ", "
+                        << "\"serialize_avg_ns\": " << serStats.avg << ", "
+                        << "\"serialize_min_ns\": " << serStats.min << ", "
+                        << "\"serialize_max_ns\": " << serStats.max << ", "
+                        << "\"serialize_p50_ns\": " << serStats.p50 << ", "
+                        << "\"serialize_p95_ns\": " << serStats.p95 << ", "
+                        << "\"deserialize_avg_ns\": " << deStats.avg << ", "
+                        << "\"deserialize_min_ns\": " << deStats.min << ", "
+                        << "\"deserialize_max_ns\": " << deStats.max << ", "
+                        << "\"deserialize_p50_ns\": " << deStats.p50 << ", "
+                        << "\"deserialize_p95_ns\": " << deStats.p95 << ", "
+                        << "\"throughput_serialize_ops_sec\": " << (serStats.avg > 0 ? 1e9/serStats.avg : 0) << ", "
+                        << "\"throughput_deserialize_ops_sec\": " << (deStats.avg > 0 ? 1e9/deStats.avg : 0) << "}";
+                } catch (const std::exception& e) {
+                    out << "    {\"name\": \"" << escapeJson(name) << "\", \"type\": \"" << escapeJson(type) << "\", "
+                        << "\"iterations\": " << iterations << ", \"error\": \"" << escapeJson(e.what()) << "\"}";
+                }
+            }
+        }
+    }
+    
+    out << "\n  ]\n}\n";
+    return out.str();
+}
+
+int main(int argc, char* argv[]) {
+    // Check for benchmark flag
+    bool benchmarkMode = false;
+    for (int i = 1; i < argc; i++) {
+        if (std::string(argv[i]) == "--benchmark") {
+            benchmarkMode = true;
+            break;
+        }
+    }
+    
     std::string input((std::istreambuf_iterator<char>(std::cin)), std::istreambuf_iterator<char>());
+    
+    // Handle benchmark mode
+    if (benchmarkMode) {
+        std::cout << runBenchmarks(input);
+        return 0;
+    }
     
     JsonParser parser(input);
     auto vectors = parser.parseObject();

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Numerics;
 using System.Text;
@@ -28,14 +29,30 @@ public class BcsSerializer
     /// <summary>Maximum allowed container nesting depth.</summary>
     public const int MaxContainerDepth = 500;
 
-    private readonly MemoryStream _buffer = new();
+    private const int DefaultCapacity = 256;
+
+    private byte[] _buffer;
+    private int _size;
+
+    /// <summary>Creates a new BCS serializer with default capacity.</summary>
+    public BcsSerializer() : this(DefaultCapacity)
+    {
+    }
+
+    /// <summary>Creates a new BCS serializer with specified initial capacity.</summary>
+    public BcsSerializer(int initialCapacity)
+    {
+        _buffer = new byte[initialCapacity];
+        _size = 0;
+    }
 
     #region Boolean
 
     /// <summary>Serializes a boolean value.</summary>
     public BcsSerializer WriteBool(bool value)
     {
-        _buffer.WriteByte(value ? (byte)1 : (byte)0);
+        EnsureCapacity(1);
+        _buffer[_size++] = value ? (byte)1 : (byte)0;
         return this;
     }
 
@@ -46,34 +63,35 @@ public class BcsSerializer
     /// <summary>Serializes an unsigned 8-bit integer.</summary>
     public BcsSerializer WriteU8(byte value)
     {
-        _buffer.WriteByte(value);
+        EnsureCapacity(1);
+        _buffer[_size++] = value;
         return this;
     }
 
     /// <summary>Serializes an unsigned 16-bit integer (little-endian).</summary>
     public BcsSerializer WriteU16(ushort value)
     {
-        Span<byte> bytes = stackalloc byte[2];
-        BinaryPrimitives.WriteUInt16LittleEndian(bytes, value);
-        _buffer.Write(bytes);
+        EnsureCapacity(2);
+        BinaryPrimitives.WriteUInt16LittleEndian(_buffer.AsSpan(_size), value);
+        _size += 2;
         return this;
     }
 
     /// <summary>Serializes an unsigned 32-bit integer (little-endian).</summary>
     public BcsSerializer WriteU32(uint value)
     {
-        Span<byte> bytes = stackalloc byte[4];
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
-        _buffer.Write(bytes);
+        EnsureCapacity(4);
+        BinaryPrimitives.WriteUInt32LittleEndian(_buffer.AsSpan(_size), value);
+        _size += 4;
         return this;
     }
 
     /// <summary>Serializes an unsigned 64-bit integer (little-endian).</summary>
     public BcsSerializer WriteU64(ulong value)
     {
-        Span<byte> bytes = stackalloc byte[8];
-        BinaryPrimitives.WriteUInt64LittleEndian(bytes, value);
-        _buffer.Write(bytes);
+        EnsureCapacity(8);
+        BinaryPrimitives.WriteUInt64LittleEndian(_buffer.AsSpan(_size), value);
+        _size += 8;
         return this;
     }
 
@@ -98,34 +116,35 @@ public class BcsSerializer
     /// <summary>Serializes a signed 8-bit integer (two's complement).</summary>
     public BcsSerializer WriteI8(sbyte value)
     {
-        _buffer.WriteByte(unchecked((byte)value));
+        EnsureCapacity(1);
+        _buffer[_size++] = unchecked((byte)value);
         return this;
     }
 
     /// <summary>Serializes a signed 16-bit integer (two's complement, little-endian).</summary>
     public BcsSerializer WriteI16(short value)
     {
-        Span<byte> bytes = stackalloc byte[2];
-        BinaryPrimitives.WriteInt16LittleEndian(bytes, value);
-        _buffer.Write(bytes);
+        EnsureCapacity(2);
+        BinaryPrimitives.WriteInt16LittleEndian(_buffer.AsSpan(_size), value);
+        _size += 2;
         return this;
     }
 
     /// <summary>Serializes a signed 32-bit integer (two's complement, little-endian).</summary>
     public BcsSerializer WriteI32(int value)
     {
-        Span<byte> bytes = stackalloc byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(bytes, value);
-        _buffer.Write(bytes);
+        EnsureCapacity(4);
+        BinaryPrimitives.WriteInt32LittleEndian(_buffer.AsSpan(_size), value);
+        _size += 4;
         return this;
     }
 
     /// <summary>Serializes a signed 64-bit integer (two's complement, little-endian).</summary>
     public BcsSerializer WriteI64(long value)
     {
-        Span<byte> bytes = stackalloc byte[8];
-        BinaryPrimitives.WriteInt64LittleEndian(bytes, value);
-        _buffer.Write(bytes);
+        EnsureCapacity(8);
+        BinaryPrimitives.WriteInt64LittleEndian(_buffer.AsSpan(_size), value);
+        _size += 8;
         return this;
     }
 
@@ -150,8 +169,29 @@ public class BcsSerializer
     /// <summary>Serializes a ULEB128-encoded unsigned integer.</summary>
     public BcsSerializer WriteUleb128(uint value)
     {
-        var encoded = Uleb128.Encode(value);
-        _buffer.Write(encoded);
+        // Inline ULEB128 encoding for better performance (avoids allocation)
+        // Fast path for small values (most common - vector lengths, etc.)
+        if (value < 0x80)
+        {
+            EnsureCapacity(1);
+            _buffer[_size++] = (byte)value;
+            return this;
+        }
+
+        // General case
+        EnsureCapacity(5); // Max 5 bytes for u32
+        var remaining = value;
+        do
+        {
+            var b = (byte)(remaining & 0x7F);
+            remaining >>= 7;
+            if (remaining != 0)
+            {
+                b |= 0x80;
+            }
+            _buffer[_size++] = b;
+        } while (remaining != 0);
+
         return this;
     }
 
@@ -167,15 +207,24 @@ public class BcsSerializer
             throw BcsException.ExceededMaxLength((ulong)value.Length);
         }
         WriteUleb128((uint)value.Length);
-        _buffer.Write(value);
+        WriteRawBytes(value);
         return this;
     }
 
     /// <summary>Serializes a UTF-8 string (length-prefixed with ULEB128).</summary>
     public BcsSerializer WriteString(string value)
     {
-        var bytes = Encoding.UTF8.GetBytes(value);
-        return WriteBytes(bytes);
+        // Get byte count first to avoid intermediate allocation when possible
+        var byteCount = Encoding.UTF8.GetByteCount(value);
+        if (byteCount > MaxSequenceLength)
+        {
+            throw BcsException.ExceededMaxLength((ulong)byteCount);
+        }
+        WriteUleb128((uint)byteCount);
+        EnsureCapacity(byteCount);
+        Encoding.UTF8.GetBytes(value, _buffer.AsSpan(_size));
+        _size += byteCount;
+        return this;
     }
 
     /// <summary>Serializes fixed-length bytes (no length prefix).</summary>
@@ -185,8 +234,16 @@ public class BcsSerializer
         {
             throw BcsException.ValueOutOfRange("fixed_bytes", value.Length);
         }
-        _buffer.Write(value);
+        WriteRawBytes(value);
         return this;
+    }
+
+    /// <summary>Writes raw bytes without length prefix.</summary>
+    private void WriteRawBytes(ReadOnlySpan<byte> value)
+    {
+        EnsureCapacity(value.Length);
+        value.CopyTo(_buffer.AsSpan(_size));
+        _size += value.Length;
     }
 
     #endregion
@@ -196,7 +253,8 @@ public class BcsSerializer
     /// <summary>Writes the option tag for a nullable value.</summary>
     public BcsSerializer WriteOptionTag(bool hasValue)
     {
-        _buffer.WriteByte(hasValue ? (byte)1 : (byte)0);
+        EnsureCapacity(1);
+        _buffer[_size++] = hasValue ? (byte)1 : (byte)0;
         return this;
     }
 
@@ -281,37 +339,67 @@ public class BcsSerializer
     #region Utility
 
     /// <summary>Returns the serialized bytes as a new array.</summary>
-    public byte[] ToArray() => _buffer.ToArray();
+    public byte[] ToArray() => _buffer.AsSpan(0, _size).ToArray();
+
+    /// <summary>Returns the serialized bytes as a span.</summary>
+    public ReadOnlySpan<byte> AsSpan() => _buffer.AsSpan(0, _size);
 
     /// <summary>Returns the current length in bytes.</summary>
-    public int Length => (int)_buffer.Length;
+    public int Length => _size;
 
     /// <summary>Clears the serializer for reuse.</summary>
-    public void Clear() => _buffer.SetLength(0);
+    public void Clear() => _size = 0;
+
+    /// <summary>Resets the serializer for reuse (alias for Clear).</summary>
+    public void Reset() => _size = 0;
 
     #endregion
 
     #region Private Helpers
 
+    private void EnsureCapacity(int additional)
+    {
+        var required = _size + additional;
+        if (required > _buffer.Length)
+        {
+            // Grow by at least 50% or to required size
+            var newCapacity = Math.Max(_buffer.Length + (_buffer.Length >> 1), required);
+            Array.Resize(ref _buffer, newCapacity);
+        }
+    }
+
     private void WriteBigIntegerLE(BigInteger value, int byteLength, bool signed)
     {
-        if (signed)
+        if (signed && value.Sign < 0)
         {
-            // For signed, convert negative to two's complement
-            if (value.Sign < 0)
+            // Convert negative to two's complement
+            value += BigInteger.One << (byteLength * 8);
+        }
+
+        EnsureCapacity(byteLength);
+
+        // Try to write directly to our buffer
+        if (value.TryWriteBytes(_buffer.AsSpan(_size, byteLength), out var bytesWritten, isUnsigned: true, isBigEndian: false))
+        {
+            // Pad with zeros if needed
+            if (bytesWritten < byteLength)
             {
-                value += BigInteger.One << (byteLength * 8);
+                _buffer.AsSpan(_size + bytesWritten, byteLength - bytesWritten).Clear();
+            }
+        }
+        else
+        {
+            // Fallback: value is larger than expected (shouldn't happen with valid input)
+            var bytes = value.ToByteArray(isUnsigned: true, isBigEndian: false);
+            var copyLen = Math.Min(bytes.Length, byteLength);
+            bytes.AsSpan(0, copyLen).CopyTo(_buffer.AsSpan(_size));
+            if (copyLen < byteLength)
+            {
+                _buffer.AsSpan(_size + copyLen, byteLength - copyLen).Clear();
             }
         }
 
-        var bytes = value.ToByteArray(isUnsigned: true, isBigEndian: false);
-        Span<byte> result = stackalloc byte[byteLength];
-
-        // Copy bytes (padding with zeros if needed)
-        var copyLen = Math.Min(bytes.Length, byteLength);
-        bytes.AsSpan(0, copyLen).CopyTo(result);
-
-        _buffer.Write(result);
+        _size += byteLength;
     }
 
     #endregion

@@ -360,4 +360,72 @@ class BCSTest < Minitest::Test
   def test_hex_to_bytes
     assert_equal [0x01, 0x02, 0xab, 0xcd], BCS.hex_to_bytes("0102abcd")
   end
+
+  # ============================================================================
+  # Batch Operations Tests
+  # ============================================================================
+
+  def test_u8_array_round_trip
+    values = (0..255).to_a
+    ser = BCS::Serializer.new
+    ser.write_u8_array(values)
+    bytes = ser.to_bytes
+
+    des = BCS::Deserializer.new(bytes)
+    result = des.read_u8_array
+    assert_equal values, result
+  end
+
+  def test_u64_array_round_trip
+    values = [0, 100, 0xFFFFFFFFFFFFFFFF, 12345, 999_999_999]
+    ser = BCS::Serializer.new
+    ser.write_u64_array(values)
+    bytes = ser.to_bytes
+
+    des = BCS::Deserializer.new(bytes)
+    result = des.read_u64_array
+    assert_equal values, result
+  end
+
+  def test_string_array_round_trip
+    values = ["hello", "world", "", "BCS", "你好"]
+    ser = BCS::Serializer.new
+    ser.write_string_array(values)
+    bytes = ser.to_bytes
+
+    des = BCS::Deserializer.new(bytes)
+    result = des.read_string_array
+    assert_equal values, result
+  end
+
+  # ============================================================================
+  # Object Pool Tests
+  # ============================================================================
+
+  def test_serializer_pool
+    # Acquire and use
+    ser = BCS.acquire_serializer
+    ser.write_u64(12345)
+    bytes1 = ser.to_bytes
+    BCS.release_serializer(ser)
+
+    # Acquire again (should get the same instance from pool)
+    ser2 = BCS.acquire_serializer
+    assert_equal 0, ser2.size  # Should be cleared
+    ser2.write_u64(67890)
+    bytes2 = ser2.to_bytes
+    BCS.release_serializer(ser2)
+
+    # Verify both serializations worked
+    assert_equal 12345, BCS.deserialize_u64(bytes1)
+    assert_equal 67890, BCS.deserialize_u64(bytes2)
+  end
+
+  def test_with_serializer_block
+    bytes = BCS.with_serializer do |ser|
+      ser.write_u64(99999)
+      ser.to_bytes
+    end
+    assert_equal 99999, BCS.deserialize_u64(bytes)
+  end
 end

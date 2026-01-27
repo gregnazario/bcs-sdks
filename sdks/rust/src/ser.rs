@@ -4,6 +4,9 @@
 use crate::error::{Error, Result};
 use serde::{ser, Serialize};
 
+/// Default capacity for serialization buffer (reduces reallocations for small values)
+const DEFAULT_SERIALIZATION_CAPACITY: usize = 128;
+
 /// Serialize the given data structure as a `Vec<u8>` of BCS.
 ///
 /// Serialization can fail if `T`'s implementation of `Serialize` decides to
@@ -46,11 +49,27 @@ use serde::{ser, Serialize};
 /// ];
 /// assert_eq!(bytes, expected);
 /// ```
+#[inline]
 pub fn to_bytes<T>(value: &T) -> Result<Vec<u8>>
 where
     T: ?Sized + Serialize,
 {
-    let mut output = Vec::new();
+    // Pre-allocate with a reasonable default capacity to reduce reallocations
+    let mut output = Vec::with_capacity(DEFAULT_SERIALIZATION_CAPACITY);
+    serialize_into(&mut output, value)?;
+    Ok(output)
+}
+
+/// Same as `to_bytes` but with a pre-allocated capacity hint.
+///
+/// Use this when you have a reasonable estimate of the serialized size
+/// to avoid reallocations.
+#[inline]
+pub fn to_bytes_with_capacity<T>(value: &T, capacity: usize) -> Result<Vec<u8>>
+where
+    T: ?Sized + Serialize,
+{
+    let mut output = Vec::with_capacity(capacity);
     serialize_into(&mut output, value)?;
     Ok(output)
 }
@@ -160,7 +179,15 @@ where
         }
     }
 
+    #[inline]
     fn output_u32_as_uleb128(&mut self, mut value: u32) -> Result<()> {
+        // Fast path for common small values (0-127) - single byte encoding
+        if value < 0x80 {
+            self.output.write_all(&[value as u8])?;
+            return Ok(());
+        }
+
+        // Multi-byte encoding path
         while value >= 0x80 {
             // Write 7 (lowest) bits of data and set the 8th bit to 1.
             let byte = (value & 0x7f) as u8;
@@ -207,50 +234,61 @@ where
     type SerializeStruct = Self;
     type SerializeStructVariant = Self;
 
+    #[inline]
     fn serialize_bool(self, v: bool) -> Result<()> {
         self.serialize_u8(v.into())
     }
 
+    #[inline]
     fn serialize_i8(self, v: i8) -> Result<()> {
         self.serialize_u8(v as u8)
     }
 
+    #[inline]
     fn serialize_i16(self, v: i16) -> Result<()> {
         self.serialize_u16(v as u16)
     }
 
+    #[inline]
     fn serialize_i32(self, v: i32) -> Result<()> {
         self.serialize_u32(v as u32)
     }
 
+    #[inline]
     fn serialize_i64(self, v: i64) -> Result<()> {
         self.serialize_u64(v as u64)
     }
 
+    #[inline]
     fn serialize_i128(self, v: i128) -> Result<()> {
         self.serialize_u128(v as u128)
     }
 
+    #[inline]
     fn serialize_u8(self, v: u8) -> Result<()> {
         self.output.write_all(&[v])?;
         Ok(())
     }
 
+    #[inline]
     fn serialize_u16(self, v: u16) -> Result<()> {
         self.output.write_all(&v.to_le_bytes())?;
         Ok(())
     }
 
+    #[inline]
     fn serialize_u32(self, v: u32) -> Result<()> {
         self.output.write_all(&v.to_le_bytes())?;
         Ok(())
     }
 
+    #[inline]
     fn serialize_u64(self, v: u64) -> Result<()> {
         self.output.write_all(&v.to_le_bytes())?;
         Ok(())
     }
 
+    #[inline]
     fn serialize_u128(self, v: u128) -> Result<()> {
         self.output.write_all(&v.to_le_bytes())?;
         Ok(())
@@ -482,6 +520,9 @@ where
     }
 }
 
+/// Default capacity for map entries (reduces reallocations for small maps)
+const DEFAULT_MAP_CAPACITY: usize = 16;
+
 #[doc(hidden)]
 struct MapSerializer<'a, W: ?Sized> {
     serializer: Serializer<'a, W>,
@@ -490,10 +531,12 @@ struct MapSerializer<'a, W: ?Sized> {
 }
 
 impl<'a, W: ?Sized> MapSerializer<'a, W> {
+    #[inline]
     fn new(serializer: Serializer<'a, W>) -> Self {
         MapSerializer {
             serializer,
-            entries: Vec::new(),
+            // Pre-allocate with reasonable capacity for common map sizes
+            entries: Vec::with_capacity(DEFAULT_MAP_CAPACITY),
             next_key: None,
         }
     }

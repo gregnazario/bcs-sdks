@@ -30,6 +30,12 @@ import java.util.function.Function;
  */
 public class BcsDeserializer {
 
+    // Pre-computed constants for signed integer conversion
+    private static final BigInteger SIGN_BIT_128 = BigInteger.ONE.shiftLeft(127);
+    private static final BigInteger TWO_POW_128 = BigInteger.ONE.shiftLeft(128);
+    private static final BigInteger SIGN_BIT_256 = BigInteger.ONE.shiftLeft(255);
+    private static final BigInteger TWO_POW_256 = BigInteger.ONE.shiftLeft(256);
+
     private final byte[] data;
     private int offset = 0;
     private int currentDepth = 0;
@@ -113,7 +119,17 @@ public class BcsDeserializer {
      */
     public long readU64() {
         ensureBytes(8);
-        return readLittleEndian(8);
+        // Inline for performance - avoid method call overhead
+        long value = (data[offset] & 0xFFL)
+                | ((data[offset + 1] & 0xFFL) << 8)
+                | ((data[offset + 2] & 0xFFL) << 16)
+                | ((data[offset + 3] & 0xFFL) << 24)
+                | ((data[offset + 4] & 0xFFL) << 32)
+                | ((data[offset + 5] & 0xFFL) << 40)
+                | ((data[offset + 6] & 0xFFL) << 48)
+                | ((data[offset + 7] & 0xFFL) << 56);
+        offset += 8;
+        return value;
     }
 
     /**
@@ -186,9 +202,8 @@ public class BcsDeserializer {
      */
     public BigInteger readI128() {
         BigInteger unsigned = readU128();
-        BigInteger signBit = BigInteger.ONE.shiftLeft(127);
-        if (unsigned.compareTo(signBit) >= 0) {
-            return unsigned.subtract(BigInteger.ONE.shiftLeft(128));
+        if (unsigned.compareTo(SIGN_BIT_128) >= 0) {
+            return unsigned.subtract(TWO_POW_128);
         }
         return unsigned;
     }
@@ -200,9 +215,8 @@ public class BcsDeserializer {
      */
     public BigInteger readI256() {
         BigInteger unsigned = readU256();
-        BigInteger signBit = BigInteger.ONE.shiftLeft(255);
-        if (unsigned.compareTo(signBit) >= 0) {
-            return unsigned.subtract(BigInteger.ONE.shiftLeft(256));
+        if (unsigned.compareTo(SIGN_BIT_256) >= 0) {
+            return unsigned.subtract(TWO_POW_256);
         }
         return unsigned;
     }
@@ -308,8 +322,9 @@ public class BcsDeserializer {
         if (length > BcsSerializer.MAX_SEQUENCE_LENGTH) {
             throw BcsError.exceededMaxLength(length);
         }
-        List<T> result = new ArrayList<>((int) length);
-        for (int i = 0; i < length; i++) {
+        int len = (int) length;
+        List<T> result = new ArrayList<>(len);
+        for (int i = 0; i < len; i++) {
             result.add(deserializer.apply(this));
         }
         return result;
@@ -478,34 +493,25 @@ public class BcsDeserializer {
         }
     }
 
-    private long readLittleEndian(int byteLength) {
-        long value = 0;
-        for (int i = 0; i < byteLength; i++) {
-            value |= ((long) (data[offset + i] & 0xFF)) << (i * 8);
-        }
-        offset += byteLength;
-        return value;
-    }
-
     private BigInteger readBigIntegerLE(int byteLength) {
-        // Read as little-endian and convert to BigInteger
-        byte[] bigEndian = new byte[byteLength + 1]; // Extra byte for sign
-        bigEndian[0] = 0; // Ensure positive
-        for (int i = 0; i < byteLength; i++) {
-            bigEndian[byteLength - i] = data[offset + i];
+        // Convert little-endian bytes to BigInteger (big-endian, positive)
+        // Allocate one extra byte at the start for sign (ensure positive)
+        byte[] bigEndian = new byte[byteLength + 1];
+        // bigEndian[0] = 0 by default, ensures positive BigInteger
+
+        // Reverse bytes from little-endian to big-endian
+        int srcEnd = offset + byteLength - 1;
+        for (int i = 1; i <= byteLength; i++) {
+            bigEndian[i] = data[srcEnd - i + 1];
         }
         offset += byteLength;
         return new BigInteger(bigEndian);
     }
 
+    /**
+     * Compare two byte arrays as unsigned bytes (lexicographic).
+     */
     private static int compareBytes(byte[] a, byte[] b) {
-        int minLen = Math.min(a.length, b.length);
-        for (int i = 0; i < minLen; i++) {
-            int cmp = (a[i] & 0xFF) - (b[i] & 0xFF);
-            if (cmp != 0) {
-                return cmp;
-            }
-        }
-        return a.length - b.length;
+        return Arrays.compareUnsigned(a, b);
     }
 }

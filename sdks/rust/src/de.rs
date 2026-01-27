@@ -112,16 +112,19 @@ impl<'de> Deserializer<'de> {
 }
 
 impl<'de> Deserializer<'de> {
+    #[inline]
     fn peek(&mut self) -> Result<u8> {
         self.input.first().copied().ok_or(Error::Eof)
     }
 
+    #[inline]
     fn next(&mut self) -> Result<u8> {
         let byte = self.peek()?;
         self.input = &self.input[1..];
         Ok(byte)
     }
 
+    #[inline]
     fn parse_bool(&mut self) -> Result<bool> {
         let byte = self.next()?;
 
@@ -132,51 +135,68 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    fn fill_slice(&mut self, slice: &mut [u8]) -> Result<()> {
-        for byte in slice {
-            *byte = self.next()?;
+    /// Read exactly N bytes into slice using efficient copy
+    #[inline]
+    fn read_exact(&mut self, n: usize) -> Result<&'de [u8]> {
+        if self.input.len() < n {
+            return Err(Error::Eof);
         }
-        Ok(())
+        let (bytes, rest) = self.input.split_at(n);
+        self.input = rest;
+        Ok(bytes)
     }
 
+    #[inline]
     fn parse_u8(&mut self) -> Result<u8> {
         self.next()
     }
 
+    #[inline]
     fn parse_u16(&mut self) -> Result<u16> {
-        let mut le_bytes = [0; 2];
-        self.fill_slice(&mut le_bytes)?;
-        Ok(u16::from_le_bytes(le_bytes))
+        let bytes = self.read_exact(2)?;
+        // SAFETY: we just verified we have exactly 2 bytes
+        Ok(u16::from_le_bytes(bytes.try_into().unwrap()))
     }
 
+    #[inline]
     fn parse_u32(&mut self) -> Result<u32> {
-        let mut le_bytes = [0; 4];
-        self.fill_slice(&mut le_bytes)?;
-        Ok(u32::from_le_bytes(le_bytes))
+        let bytes = self.read_exact(4)?;
+        // SAFETY: we just verified we have exactly 4 bytes
+        Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
     }
 
+    #[inline]
     fn parse_u64(&mut self) -> Result<u64> {
-        let mut le_bytes = [0; 8];
-        self.fill_slice(&mut le_bytes)?;
-        Ok(u64::from_le_bytes(le_bytes))
+        let bytes = self.read_exact(8)?;
+        // SAFETY: we just verified we have exactly 8 bytes
+        Ok(u64::from_le_bytes(bytes.try_into().unwrap()))
     }
 
+    #[inline]
     fn parse_u128(&mut self) -> Result<u128> {
-        let mut le_bytes = [0; 16];
-        self.fill_slice(&mut le_bytes)?;
-        Ok(u128::from_le_bytes(le_bytes))
+        let bytes = self.read_exact(16)?;
+        // SAFETY: we just verified we have exactly 16 bytes
+        Ok(u128::from_le_bytes(bytes.try_into().unwrap()))
     }
 
     #[allow(clippy::arithmetic_side_effects)]
+    #[inline]
     fn parse_u32_from_uleb128(&mut self) -> Result<u32> {
-        let mut value: u64 = 0;
-        for shift in (0..32).step_by(7) {
+        // Fast path for single-byte values (0-127)
+        let first = self.next()?;
+        if first < 0x80 {
+            return Ok(u32::from(first));
+        }
+
+        // Multi-byte decoding
+        let mut value: u64 = u64::from(first & 0x7f);
+        for shift in (7..32).step_by(7) {
             let byte = self.next()?;
             let digit = byte & 0x7f;
             value |= u64::from(digit) << shift;
             // If the highest bit of `byte` is 0, return the final value.
             if digit == byte {
-                if shift > 0 && digit == 0 {
+                if digit == 0 {
                     // We only accept canonical ULEB128 encodings, therefore the
                     // heaviest (and last) base-128 digit must be non-zero.
                     return Err(Error::NonCanonicalUleb128Encoding);
@@ -190,6 +210,7 @@ impl<'de> Deserializer<'de> {
         Err(Error::IntegerOverflowDuringUleb128Decoding)
     }
 
+    #[inline]
     fn parse_length(&mut self) -> Result<usize> {
         let len = self.parse_u32_from_uleb128()? as usize;
         if len > crate::MAX_SEQUENCE_LENGTH {
@@ -198,18 +219,20 @@ impl<'de> Deserializer<'de> {
         Ok(len)
     }
 
+    #[inline]
     fn parse_bytes(&mut self) -> Result<&'de [u8]> {
         let len = self.parse_length()?;
-        let slice = self.input.get(..len).ok_or(Error::Eof)?;
-        self.input = &self.input[len..];
-        Ok(slice)
+        // Use read_exact for efficient slice access
+        self.read_exact(len)
     }
 
+    #[inline]
     fn parse_string(&mut self) -> Result<&'de str> {
         let slice = self.parse_bytes()?;
         std::str::from_utf8(slice).map_err(|_| Error::Utf8)
     }
 
+    #[inline]
     fn enter_named_container(&mut self, name: &'static str) -> Result<()> {
         if self.max_remaining_depth == 0 {
             return Err(Error::ExceededContainerDepthLimit(name));
@@ -218,8 +241,16 @@ impl<'de> Deserializer<'de> {
         Ok(())
     }
 
+    #[inline]
     fn leave_named_container(&mut self) {
         self.max_remaining_depth += 1;
+    }
+
+    /// Returns remaining bytes without consuming them (useful for debugging/introspection)
+    #[inline]
+    #[allow(dead_code)]
+    pub fn remaining_bytes(&self) -> usize {
+        self.input.len()
     }
 }
 
@@ -234,6 +265,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
         Err(Error::NotSupported("deserialize_any"))
     }
 
+    #[inline]
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -241,6 +273,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_bool(self.parse_bool()?)
     }
 
+    #[inline]
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -248,6 +281,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_i8(self.parse_u8()? as i8)
     }
 
+    #[inline]
     fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -255,6 +289,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_i16(self.parse_u16()? as i16)
     }
 
+    #[inline]
     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -262,6 +297,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_i32(self.parse_u32()? as i32)
     }
 
+    #[inline]
     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -269,6 +305,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_i64(self.parse_u64()? as i64)
     }
 
+    #[inline]
     fn deserialize_i128<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -276,6 +313,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_i128(self.parse_u128()? as i128)
     }
 
+    #[inline]
     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -283,6 +321,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_u8(self.parse_u8()?)
     }
 
+    #[inline]
     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -290,6 +329,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_u16(self.parse_u16()?)
     }
 
+    #[inline]
     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -297,6 +337,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_u32(self.parse_u32()?)
     }
 
+    #[inline]
     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -304,6 +345,7 @@ impl<'de> de::Deserializer<'de> for &mut Deserializer<'de> {
         visitor.visit_u64(self.parse_u64()?)
     }
 
+    #[inline]
     fn deserialize_u128<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,

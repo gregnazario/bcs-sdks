@@ -2,9 +2,16 @@
 
 module BCS
   # BCS Deserializer - Manual deserialization API
+  # Optimized to use String with binary encoding and native unpack operations
   class Deserializer
+    # Pre-computed sign bit and modulus constants for signed integers
+    SIGN_BIT_128 = 1 << 127
+    MODULUS_128 = 1 << 128
+    SIGN_BIT_256 = 1 << 255
+    MODULUS_256 = 1 << 256
+
     def initialize(data)
-      @data = data.is_a?(String) ? data.bytes : data.to_a
+      @data = data.is_a?(String) ? data.b : data.pack("C*")
       @offset = 0
       @depth = 0
     end
@@ -31,7 +38,7 @@ module BCS
     # Read an unsigned 8-bit integer
     def read_u8
       check_remaining(1)
-      value = @data[@offset]
+      value = @data.getbyte(@offset)
       @offset += 1
       value
     end
@@ -39,7 +46,7 @@ module BCS
     # Read an unsigned 16-bit integer (little-endian)
     def read_u16
       check_remaining(2)
-      value = @data[@offset] | (@data[@offset + 1] << 8)
+      value = @data.byteslice(@offset, 2).unpack1("v")
       @offset += 2
       value
     end
@@ -47,8 +54,7 @@ module BCS
     # Read an unsigned 32-bit integer (little-endian)
     def read_u32
       check_remaining(4)
-      value = 0
-      4.times { |i| value |= @data[@offset + i] << (i * 8) }
+      value = @data.byteslice(@offset, 4).unpack1("V")
       @offset += 4
       value
     end
@@ -56,8 +62,7 @@ module BCS
     # Read an unsigned 64-bit integer (little-endian)
     def read_u64
       check_remaining(8)
-      value = 0
-      8.times { |i| value |= @data[@offset + i] << (i * 8) }
+      value = @data.byteslice(@offset, 8).unpack1("Q<")
       @offset += 8
       value
     end
@@ -65,19 +70,17 @@ module BCS
     # Read an unsigned 128-bit integer (little-endian)
     def read_u128
       check_remaining(16)
-      value = 0
-      16.times { |i| value |= @data[@offset + i] << (i * 8) }
+      low, high = @data.byteslice(@offset, 16).unpack("Q<Q<")
       @offset += 16
-      value
+      low | (high << 64)
     end
 
     # Read an unsigned 256-bit integer (little-endian)
     def read_u256
       check_remaining(32)
-      value = 0
-      32.times { |i| value |= @data[@offset + i] << (i * 8) }
+      parts = @data.byteslice(@offset, 32).unpack("Q<Q<Q<Q<")
       @offset += 32
-      value
+      parts[0] | (parts[1] << 64) | (parts[2] << 128) | (parts[3] << 192)
     end
 
     # ========================================================================
@@ -86,38 +89,48 @@ module BCS
 
     # Read a signed 8-bit integer
     def read_i8
-      value = read_u8
-      value >= 0x80 ? value - 0x100 : value
+      check_remaining(1)
+      value = @data.byteslice(@offset, 1).unpack1("c")
+      @offset += 1
+      value
     end
 
     # Read a signed 16-bit integer (little-endian)
     def read_i16
-      value = read_u16
-      value >= 0x8000 ? value - 0x10000 : value
+      check_remaining(2)
+      value = @data.byteslice(@offset, 2).unpack1("s<")
+      @offset += 2
+      value
     end
 
     # Read a signed 32-bit integer (little-endian)
     def read_i32
-      value = read_u32
-      value >= 0x80000000 ? value - 0x100000000 : value
+      check_remaining(4)
+      value = @data.byteslice(@offset, 4).unpack1("l<")
+      @offset += 4
+      value
     end
 
     # Read a signed 64-bit integer (little-endian)
     def read_i64
-      value = read_u64
-      value >= 0x8000000000000000 ? value - 0x10000000000000000 : value
+      check_remaining(8)
+      value = @data.byteslice(@offset, 8).unpack1("q<")
+      @offset += 8
+      value
     end
 
     # Read a signed 128-bit integer (little-endian)
+    # Uses pre-computed constants for better performance
     def read_i128
       value = read_u128
-      value >= (1 << 127) ? value - (1 << 128) : value
+      value >= SIGN_BIT_128 ? value - MODULUS_128 : value
     end
 
     # Read a signed 256-bit integer (little-endian)
+    # Uses pre-computed constants for better performance
     def read_i256
       value = read_u256
-      value >= (1 << 255) ? value - (1 << 256) : value
+      value >= SIGN_BIT_256 ? value - MODULUS_256 : value
     end
 
     # ========================================================================
@@ -125,7 +138,18 @@ module BCS
     # ========================================================================
 
     # Read a ULEB128-encoded value
+    # Optimized with inline fast path for single-byte values
     def read_uleb128
+      check_remaining(1)
+      byte = @data.getbyte(@offset)
+
+      # Fast path: single byte (values 0-127)
+      if byte < 0x80
+        @offset += 1
+        return byte
+      end
+
+      # Slow path: multi-byte value
       value, bytes_read = Uleb128.decode(@data, @offset)
       @offset += bytes_read
       value
@@ -137,10 +161,20 @@ module BCS
 
     # Read fixed-length bytes (without length prefix)
     # @param length [Integer] Number of bytes to read
-    # @return [Array<Integer>] The bytes
+    # @return [Array<Integer>] The bytes as an array
     def read_fixed_bytes(length)
       check_remaining(length)
-      result = @data[@offset, length]
+      result = @data.byteslice(@offset, length).bytes
+      @offset += length
+      result
+    end
+
+    # Read fixed-length bytes as a binary string (without length prefix)
+    # @param length [Integer] Number of bytes to read
+    # @return [String] The bytes as a binary string
+    def read_fixed_bytes_as_string(length)
+      check_remaining(length)
+      result = @data.byteslice(@offset, length)
       @offset += length
       result
     end
@@ -153,17 +187,23 @@ module BCS
       read_fixed_bytes(length)
     end
 
+    # Read bytes with ULEB128 length prefix as a binary string
+    # @return [String] The bytes as a binary string
+    def read_bytes_as_string
+      length = read_uleb128
+      check_sequence_length(length)
+      read_fixed_bytes_as_string(length)
+    end
+
     # Read a UTF-8 string with ULEB128 length prefix
     # @return [String] The string
     def read_string
-      bytes = read_bytes
-      begin
-        bytes.pack("C*").force_encoding("UTF-8").tap do |str|
-          raise Error.invalid_utf8 unless str.valid_encoding?
-        end
-      rescue Encoding::InvalidByteSequenceError
-        raise Error.invalid_utf8
-      end
+      str = read_bytes_as_string.force_encoding("UTF-8")
+      raise Error.invalid_utf8 unless str.valid_encoding?
+
+      str
+    rescue Encoding::InvalidByteSequenceError
+      raise Error.invalid_utf8
     end
 
     # ========================================================================
@@ -191,6 +231,70 @@ module BCS
       Array.new(length) { deserializer.call(self) }
     end
 
+    # ========================================================================
+    # BATCH OPERATIONS (Optimized for common vector types)
+    # ========================================================================
+
+    # Read a vector of u8 values (optimized batch operation)
+    # @return [Array<Integer>] The array of u8 values
+    def read_u8_array
+      length = read_uleb128
+      check_sequence_length(length)
+      read_fixed_bytes(length)
+    end
+
+    # Read a vector of u8 values as a binary string (optimized batch operation)
+    # @return [String] The bytes as a binary string
+    def read_u8_array_as_string
+      length = read_uleb128
+      check_sequence_length(length)
+      read_fixed_bytes_as_string(length)
+    end
+
+    # Read a vector of u16 values (optimized batch operation)
+    # @return [Array<Integer>] The array of u16 values
+    def read_u16_array
+      length = read_uleb128
+      check_sequence_length(length)
+      byte_length = length * 2
+      check_remaining(byte_length)
+      result = @data.byteslice(@offset, byte_length).unpack("v*")
+      @offset += byte_length
+      result
+    end
+
+    # Read a vector of u32 values (optimized batch operation)
+    # @return [Array<Integer>] The array of u32 values
+    def read_u32_array
+      length = read_uleb128
+      check_sequence_length(length)
+      byte_length = length * 4
+      check_remaining(byte_length)
+      result = @data.byteslice(@offset, byte_length).unpack("V*")
+      @offset += byte_length
+      result
+    end
+
+    # Read a vector of u64 values (optimized batch operation)
+    # @return [Array<Integer>] The array of u64 values
+    def read_u64_array
+      length = read_uleb128
+      check_sequence_length(length)
+      byte_length = length * 8
+      check_remaining(byte_length)
+      result = @data.byteslice(@offset, byte_length).unpack("Q<*")
+      @offset += byte_length
+      result
+    end
+
+    # Read a vector of strings (optimized batch operation)
+    # @return [Array<String>] The array of strings
+    def read_string_array
+      length = read_uleb128
+      check_sequence_length(length)
+      Array.new(length) { read_string }
+    end
+
     # Read a map with key/value deserializers
     # @yield [key_des, value_des] Blocks to deserialize keys and values
     # @return [Hash] The deserialized map
@@ -207,16 +311,16 @@ module BCS
 
         key = block.call(self, :key)
 
-        # Get key bytes for ordering check
-        key_bytes = @data[key_start...@offset]
+        # Get key bytes for ordering check (as binary string for efficient comparison)
+        key_bytes = @data.byteslice(key_start, @offset - key_start)
 
-      # Check ordering (lexicographic comparison)
-      if prev_key_bytes
-        cmp = compare_bytes(key_bytes, prev_key_bytes)
-        if cmp <= 0
-          raise cmp.zero? ? Error.duplicate_map_key : Error.non_canonical_map
+        # Check ordering (lexicographic comparison using native string comparison)
+        if prev_key_bytes
+          cmp = key_bytes <=> prev_key_bytes
+          if cmp <= 0
+            raise cmp.zero? ? Error.duplicate_map_key : Error.non_canonical_map
+          end
         end
-      end
         prev_key_bytes = key_bytes
 
         value = block.call(self, :value)
@@ -266,7 +370,7 @@ module BCS
     # Check that all input has been consumed
     # @raise [Error] if there are remaining bytes
     def check_end
-      raise Error.remaining_input(remaining) if @offset < @data.length
+      raise Error.remaining_input(remaining) if @offset < @data.bytesize
     end
 
     # Get the current offset
@@ -276,19 +380,23 @@ module BCS
     # Get the remaining bytes count
     # @return [Integer]
     def remaining
-      @data.length - @offset
+      @data.bytesize - @offset
     end
 
     # Check if there's more data to read
     # @return [Boolean]
     def remaining?
-      @offset < @data.length
+      @offset < @data.bytesize
     end
+
+    # Get the raw data buffer (for advanced use)
+    # @return [String] The raw binary data
+    attr_reader :data
 
     private
 
     def check_remaining(needed)
-      raise Error.unexpected_eof if @offset + needed > @data.length
+      raise Error.unexpected_eof if @offset + needed > @data.bytesize
     end
 
     def check_sequence_length(length)
@@ -302,17 +410,6 @@ module BCS
 
     def leave_container
       @depth -= 1 if @depth.positive?
-    end
-
-    # Lexicographic byte comparison
-    # @return [Integer] -1 if a < b, 0 if a == b, 1 if a > b
-    def compare_bytes(a, b)
-      min_len = [a.length, b.length].min
-      min_len.times do |i|
-        return -1 if a[i] < b[i]
-        return 1 if a[i] > b[i]
-      end
-      a.length <=> b.length
     end
   end
 end

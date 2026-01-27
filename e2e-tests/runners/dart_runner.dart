@@ -470,21 +470,250 @@ Map<String, dynamic> processTestCase(Map<String, dynamic> tc) {
   }
 }
 
-void main() {
+// Benchmark support
+Map<String, double> computeStats(List<int> times) {
+  if (times.isEmpty) return {'avg': 0, 'min': 0, 'max': 0, 'p50': 0, 'p95': 0};
+  final sorted = List<int>.from(times)..sort();
+  final n = sorted.length;
+  final sum = times.fold<int>(0, (a, b) => a + b);
+  return {
+    'avg': sum / n,
+    'min': sorted.first.toDouble(),
+    'max': sorted.last.toDouble(),
+    'p50': sorted[n ~/ 2].toDouble(),
+    'p95': sorted[(n * 0.95).toInt()].toDouble(),
+  };
+}
+
+dynamic generateValue(Map<String, dynamic> bc) {
+  if (bc.containsKey('value') && bc['value'] != null) return bc['value'];
+  final length = (bc['length'] as int?) ?? 10;
+  switch (bc['value_generator']) {
+    case 'repeat_char':
+      final char = (bc['char'] as String?) ?? 'a';
+      return char * length;
+    case 'sequential_bytes':
+    case 'sequential_u8':
+      return List.generate(length, (i) => i % 256);
+    case 'sequential_u64':
+      return List.generate(length, (i) => i.toString());
+    case 'address_bytes':
+      return List.filled(31, 0) + [1];
+    default:
+      return bc['value'];
+  }
+}
+
+void serializeValue(BcsSerializer s, String type, dynamic value) {
+  switch (type) {
+    case 'bool': s.writeBool(value as bool); break;
+    case 'u8': s.writeU8(value as int); break;
+    case 'u16': s.writeU16(value as int); break;
+    case 'u32': s.writeU32(value as int); break;
+    case 'u64':
+      final v = value is String ? BigInt.parse(value) : BigInt.from(value as int);
+      s.writeU64(v);
+      break;
+    case 'u128':
+      final v = value is String ? BigInt.parse(value) : BigInt.from(value as int);
+      s.writeU128(v);
+      break;
+    case 'i8': s.writeI8(value as int); break;
+    case 'i16': s.writeI16(value as int); break;
+    case 'i32': s.writeI32(value as int); break;
+    case 'i64':
+      final v = value is String ? BigInt.parse(value) : BigInt.from(value as int);
+      s.writeI64(v);
+      break;
+    case 'i128':
+      final v = value is String ? BigInt.parse(value) : BigInt.from(value as int);
+      s.writeI128(v);
+      break;
+    case 'string': s.writeString(value as String); break;
+    case 'bytes':
+      final bytes = (value as List).cast<int>();
+      s.writeUleb128(bytes.length);
+      for (final b in bytes) s.writeU8(b);
+      break;
+    case 'fixed_bytes':
+      final bytes = (value as List).cast<int>();
+      for (final b in bytes) s.writeU8(b);
+      break;
+    case 'vector<u8>':
+      final arr = (value as List).cast<int>();
+      s.writeUleb128(arr.length);
+      for (final v in arr) s.writeU8(v);
+      break;
+    case 'vector<u64>':
+      final arr = value as List;
+      s.writeUleb128(arr.length);
+      for (final v in arr) {
+        final bv = v is String ? BigInt.parse(v) : BigInt.from(v as int);
+        s.writeU64(bv);
+      }
+      break;
+    case 'vector<string>':
+      final arr = (value as List).cast<String>();
+      s.writeUleb128(arr.length);
+      for (final v in arr) s.writeString(v);
+      break;
+  }
+}
+
+void deserializeValue(BcsDeserializer d, String type) {
+  switch (type) {
+    case 'bool': d.readBool(); break;
+    case 'u8': d.readU8(); break;
+    case 'u16': d.readU16(); break;
+    case 'u32': d.readU32(); break;
+    case 'u64': d.readU64(); break;
+    case 'u128': d.readU128(); break;
+    case 'i8': d.readI8(); break;
+    case 'i16': d.readI16(); break;
+    case 'i32': d.readI32(); break;
+    case 'i64': d.readI64(); break;
+    case 'i128': d.readI128(); break;
+    case 'string': d.readString(); break;
+    case 'bytes':
+      final len = d.readUleb128();
+      for (var i = 0; i < len; i++) d.readU8();
+      break;
+    case 'fixed_bytes':
+      for (var i = 0; i < 32; i++) d.readU8();
+      break;
+    case 'vector<u8>':
+      final len = d.readUleb128();
+      for (var i = 0; i < len; i++) d.readU8();
+      break;
+    case 'vector<u64>':
+      final len = d.readUleb128();
+      for (var i = 0; i < len; i++) d.readU64();
+      break;
+    case 'vector<string>':
+      final len = d.readUleb128();
+      for (var i = 0; i < len; i++) d.readString();
+      break;
+  }
+}
+
+Map<String, dynamic> runBenchmarks(Map<String, dynamic> spec) {
+  final defaultIterations = (spec['config']?['default_iterations'] as int?) ?? 1000;
+  final warmup = (spec['config']?['warmup_iterations'] as int?) ?? 10;
+  final scenarios = spec['scenarios'] as Map<String, dynamic>? ?? {};
+  
+  final results = <Map<String, dynamic>>[];
+  
+  for (final group in scenarios.values) {
+    final benchmarks = (group['benchmarks'] as List?) ?? [];
+    for (final bc in benchmarks) {
+      final bcMap = bc as Map<String, dynamic>;
+      final iterations = (bcMap['iterations'] as int?) ?? defaultIterations;
+      final name = bcMap['name'] as String;
+      final type = bcMap['type'] as String;
+      
+      try {
+        final value = generateValue(bcMap);
+        
+        // Serialize to get bytes
+        final ser = BcsSerializer();
+        serializeValue(ser, type, value);
+        final bcsBytes = ser.toBytes();
+        
+        // Warmup serialize
+        for (var i = 0; i < warmup; i++) {
+          final ws = BcsSerializer();
+          serializeValue(ws, type, value);
+          ws.toBytes();
+        }
+        
+        // Benchmark serialize
+        final serTimes = <int>[];
+        for (var i = 0; i < iterations; i++) {
+          final sw = Stopwatch()..start();
+          final bs = BcsSerializer();
+          serializeValue(bs, type, value);
+          bs.toBytes();
+          sw.stop();
+          serTimes.add(sw.elapsedMicroseconds * 1000); // Convert to ns
+        }
+        
+        // Warmup deserialize
+        for (var i = 0; i < warmup; i++) {
+          final wd = BcsDeserializer(bcsBytes);
+          deserializeValue(wd, type);
+        }
+        
+        // Benchmark deserialize
+        final deTimes = <int>[];
+        for (var i = 0; i < iterations; i++) {
+          final sw = Stopwatch()..start();
+          final bd = BcsDeserializer(bcsBytes);
+          deserializeValue(bd, type);
+          sw.stop();
+          deTimes.add(sw.elapsedMicroseconds * 1000);
+        }
+        
+        final serStats = computeStats(serTimes);
+        final deStats = computeStats(deTimes);
+        
+        results.add({
+          'name': name,
+          'type': type,
+          'iterations': iterations,
+          'serialize_avg_ns': serStats['avg'],
+          'serialize_min_ns': serStats['min'],
+          'serialize_max_ns': serStats['max'],
+          'serialize_p50_ns': serStats['p50'],
+          'serialize_p95_ns': serStats['p95'],
+          'deserialize_avg_ns': deStats['avg'],
+          'deserialize_min_ns': deStats['min'],
+          'deserialize_max_ns': deStats['max'],
+          'deserialize_p50_ns': deStats['p50'],
+          'deserialize_p95_ns': deStats['p95'],
+          'throughput_serialize_ops_sec': serStats['avg']! > 0 ? 1e9 / serStats['avg']! : 0,
+          'throughput_deserialize_ops_sec': deStats['avg']! > 0 ? 1e9 / deStats['avg']! : 0,
+        });
+      } catch (e) {
+        results.add({
+          'name': name,
+          'type': type,
+          'iterations': iterations,
+          'error': e.toString(),
+        });
+      }
+    }
+  }
+  
+  return {
+    'version': spec['version'] ?? '1.0.0',
+    'description': 'Dart benchmark results',
+    'benchmarks': results,
+  };
+}
+
+void main(List<String> args) {
+  final benchmarkMode = args.contains('--benchmark');
+  
   // Read all stdin by reading /dev/stdin
   final inputStr = File('/dev/stdin').readAsStringSync();
-  final vectors = jsonDecode(inputStr) as Map<String, dynamic>;
+  final data = jsonDecode(inputStr) as Map<String, dynamic>;
+
+  if (benchmarkMode) {
+    final output = runBenchmarks(data);
+    print(const JsonEncoder.withIndent('  ').convert(output));
+    return;
+  }
 
   final output = {
-    'version': vectors['version'] ?? '1.0.0',
+    'version': data['version'] ?? '1.0.0',
     'description': 'Dart roundtrip results',
-    'primitives': (vectors['primitives'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
-    'strings': (vectors['strings'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
-    'bytes': (vectors['bytes'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
-    'options': (vectors['options'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
-    'vectors': (vectors['vectors'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
-    'structs': (vectors['structs'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
-    'complex': (vectors['complex'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
+    'primitives': (data['primitives'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
+    'strings': (data['strings'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
+    'bytes': (data['bytes'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
+    'options': (data['options'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
+    'vectors': (data['vectors'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
+    'structs': (data['structs'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
+    'complex': (data['complex'] as List? ?? []).map((tc) => processTestCase(tc as Map<String, dynamic>)).toList(),
   };
 
   print(const JsonEncoder.withIndent('  ').convert(output));

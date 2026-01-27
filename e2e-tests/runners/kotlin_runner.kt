@@ -459,16 +459,211 @@ fun toJson(obj: Any?, indent: Int = 0): String {
     }
 }
 
-fun main() {
+// Benchmark support
+fun computeStats(times: LongArray): DoubleArray {
+    if (times.isEmpty()) return doubleArrayOf(0.0, 0.0, 0.0, 0.0, 0.0)
+    val sorted = times.sorted()
+    val n = sorted.size
+    val sum = times.sum()
+    return doubleArrayOf(
+        sum.toDouble() / n,
+        sorted[0].toDouble(),
+        sorted[n-1].toDouble(),
+        sorted[n/2].toDouble(),
+        sorted[(n * 0.95).toInt()].toDouble()
+    )
+}
+
+@Suppress("UNCHECKED_CAST")
+fun generateBenchValue(bc: Map<String, Any?>): Any? {
+    if (bc.containsKey("value") && bc["value"] != null) return bc["value"]
+    val length = (bc["length"] as? Number)?.toInt() ?: 10
+    return when (bc["value_generator"]) {
+        "repeat_char" -> (bc["char"] as? String ?: "a").repeat(length)
+        "sequential_bytes", "sequential_u8" -> (0 until length).map { it % 256 }
+        "sequential_u64" -> (0 until length).map { it.toString() }
+        "address_bytes" -> List(31) { 0 } + listOf(1)
+        else -> bc["value"]
+    }
+}
+
+@Suppress("UNCHECKED_CAST")
+fun serializeBenchValue(s: BcsSerializer, type: String, value: Any?) {
+    when (type) {
+        "bool" -> s.writeBool(value as? Boolean ?: false)
+        "u8" -> s.writeU8((value as? Number)?.toInt() ?: 0)
+        "u16" -> s.writeU16((value as? Number)?.toInt() ?: 0)
+        "u32" -> s.writeU32((value as? Number)?.toLong() ?: 0)
+        "u64" -> {
+            val v = when (value) {
+                is String -> value.toLongOrNull() ?: 0L
+                is Number -> value.toLong()
+                else -> 0L
+            }
+            s.writeU64(v)
+        }
+        "string" -> s.writeString(value as? String ?: "")
+        "bytes", "vector<u8>" -> {
+            val arr = (value as? List<Number>)?.map { it.toInt() } ?: emptyList()
+            s.writeUleb128(arr.size)
+            arr.forEach { s.writeU8(it) }
+        }
+        "vector<u64>" -> {
+            val arr = value as? List<*> ?: emptyList<Any>()
+            s.writeUleb128(arr.size)
+            arr.forEach { v ->
+                val lv = when (v) {
+                    is String -> v.toLongOrNull() ?: 0L
+                    is Number -> v.toLong()
+                    else -> 0L
+                }
+                s.writeU64(lv)
+            }
+        }
+        "vector<string>" -> {
+            val arr = (value as? List<String>) ?: emptyList()
+            s.writeUleb128(arr.size)
+            arr.forEach { s.writeString(it) }
+        }
+    }
+}
+
+fun deserializeBenchValue(d: BcsDeserializer, type: String) {
+    when (type) {
+        "bool" -> d.readBool()
+        "u8" -> d.readU8()
+        "u16" -> d.readU16()
+        "u32" -> d.readU32()
+        "u64" -> d.readU64()
+        "string" -> d.readString()
+        "bytes", "vector<u8>" -> {
+            val len = d.readUleb128()
+            repeat(len) { d.readU8() }
+        }
+        "vector<u64>" -> {
+            val len = d.readUleb128()
+            repeat(len) { d.readU64() }
+        }
+        "vector<string>" -> {
+            val len = d.readUleb128()
+            repeat(len) { d.readString() }
+        }
+    }
+}
+
+@Suppress("UNCHECKED_CAST")
+fun runBenchmarks(spec: Map<String, Any?>): Map<String, Any?> {
+    val config = spec["config"] as? Map<String, Any?> ?: emptyMap()
+    val defaultIterations = (config["default_iterations"] as? Number)?.toInt() ?: 1000
+    val warmup = (config["warmup_iterations"] as? Number)?.toInt() ?: 10
+    
+    val results = mutableListOf<Map<String, Any?>>()
+    val scenarios = spec["scenarios"] as? Map<String, Any?> ?: emptyMap()
+    
+    for ((_, groupObj) in scenarios) {
+        val group = groupObj as? Map<String, Any?> ?: continue
+        val benchmarks = group["benchmarks"] as? List<Map<String, Any?>> ?: continue
+        
+        for (bc in benchmarks) {
+            val name = bc["name"] as? String ?: ""
+            val type = bc["type"] as? String ?: ""
+            val iterations = (bc["iterations"] as? Number)?.toInt() ?: defaultIterations
+            
+            try {
+                val value = generateBenchValue(bc)
+                
+                // Serialize to get bytes
+                val ser = BcsSerializer()
+                serializeBenchValue(ser, type, value)
+                val bcsBytes = ser.toBytes()
+                
+                // Warmup serialize
+                repeat(warmup) {
+                    val ws = BcsSerializer()
+                    serializeBenchValue(ws, type, value)
+                    ws.toBytes()
+                }
+                
+                // Benchmark serialize
+                val serTimes = LongArray(iterations)
+                repeat(iterations) { i ->
+                    val start = System.nanoTime()
+                    val bs = BcsSerializer()
+                    serializeBenchValue(bs, type, value)
+                    bs.toBytes()
+                    serTimes[i] = System.nanoTime() - start
+                }
+                
+                // Warmup deserialize
+                repeat(warmup) {
+                    val wd = BcsDeserializer(bcsBytes)
+                    deserializeBenchValue(wd, type)
+                }
+                
+                // Benchmark deserialize
+                val deTimes = LongArray(iterations)
+                repeat(iterations) { i ->
+                    val start = System.nanoTime()
+                    val bd = BcsDeserializer(bcsBytes)
+                    deserializeBenchValue(bd, type)
+                    deTimes[i] = System.nanoTime() - start
+                }
+                
+                val serStats = computeStats(serTimes)
+                val deStats = computeStats(deTimes)
+                
+                results.add(mapOf(
+                    "name" to name,
+                    "type" to type,
+                    "iterations" to iterations,
+                    "serialize_avg_ns" to serStats[0],
+                    "serialize_min_ns" to serStats[1],
+                    "serialize_max_ns" to serStats[2],
+                    "serialize_p50_ns" to serStats[3],
+                    "serialize_p95_ns" to serStats[4],
+                    "deserialize_avg_ns" to deStats[0],
+                    "deserialize_min_ns" to deStats[1],
+                    "deserialize_max_ns" to deStats[2],
+                    "deserialize_p50_ns" to deStats[3],
+                    "deserialize_p95_ns" to deStats[4],
+                    "throughput_serialize_ops_sec" to if (serStats[0] > 0) 1e9 / serStats[0] else 0.0,
+                    "throughput_deserialize_ops_sec" to if (deStats[0] > 0) 1e9 / deStats[0] else 0.0
+                ))
+            } catch (e: Exception) {
+                results.add(mapOf(
+                    "name" to name,
+                    "type" to type,
+                    "iterations" to iterations,
+                    "error" to (e.message ?: "unknown error")
+                ))
+            }
+        }
+    }
+    
+    return mapOf(
+        "version" to (spec["version"] ?: "1.0.0"),
+        "description" to "Kotlin benchmark results",
+        "benchmarks" to results
+    )
+}
+
+fun main(args: Array<String>) {
+    val benchmarkMode = args.contains("--benchmark")
     val input = generateSequence(::readLine).joinToString("\n")
     @Suppress("UNCHECKED_CAST")
-    val vectors = parseJson(input) as Map<String, Any?>
+    val data = parseJson(input) as Map<String, Any?>
+    
+    if (benchmarkMode) {
+        val output = runBenchmarks(data)
+        println(toJson(output))
+        return
+    }
     
     @Suppress("UNCHECKED_CAST")
-    fun processList(key: String) = (vectors[key] as? List<Map<String, Any?>>)?.map { processTestCase(it) } ?: emptyList()
+    fun processList(key: String) = (data[key] as? List<Map<String, Any?>>)?.map { processTestCase(it) } ?: emptyList()
     
     val output = mapOf(
-        "version" to (vectors["version"] ?: "1.0.0"),
+        "version" to (data["version"] ?: "1.0.0"),
         "description" to "Kotlin roundtrip results",
         "primitives" to processList("primitives"),
         "strings" to processList("strings"),
@@ -482,4 +677,4 @@ fun main() {
     println(toJson(output))
 }
 
-main()
+main(args)

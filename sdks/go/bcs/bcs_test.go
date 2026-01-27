@@ -547,3 +547,190 @@ func TestRoundTrip(t *testing.T) {
 		assert.Equal(t, values, result)
 	})
 }
+
+// ==========================================================================
+// BATCH OPERATION TESTS
+// ==========================================================================
+
+func TestBatchOperations(t *testing.T) {
+	t.Run("u8 slice round trip", func(t *testing.T) {
+		values := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+		ser := NewSerializer()
+		ser.WriteU8Slice(values)
+		data := ser.Bytes()
+
+		des := NewDeserializer(data)
+		result, err := des.ReadU8Slice()
+		require.NoError(t, err)
+		assert.Equal(t, values, result)
+	})
+
+	t.Run("u64 slice round trip", func(t *testing.T) {
+		values := []uint64{100, 200, 18446744073709551615, 0, 12345}
+		ser := NewSerializer()
+		ser.WriteU64Slice(values)
+		data := ser.Bytes()
+
+		des := NewDeserializer(data)
+		result, err := des.ReadU64Slice()
+		require.NoError(t, err)
+		assert.Equal(t, values, result)
+	})
+
+	t.Run("string slice round trip", func(t *testing.T) {
+		values := []string{"hello", "world", "BCS", ""}
+		ser := NewSerializer()
+		ser.WriteStringSlice(values)
+		data := ser.Bytes()
+
+		des := NewDeserializer(data)
+		result, err := des.ReadStringSlice()
+		require.NoError(t, err)
+		assert.Equal(t, values, result)
+	})
+}
+
+// ==========================================================================
+// POOL TESTS
+// ==========================================================================
+
+func TestSerializerPool(t *testing.T) {
+	t.Run("acquire and release", func(t *testing.T) {
+		ser := AcquireSerializer()
+		ser.WriteU64(12345)
+		data := ser.Bytes()
+		assert.Equal(t, "3930000000000000", bytesToHex(data))
+		ReleaseSerializer(ser)
+
+		// Acquire again - should be reset
+		ser2 := AcquireSerializer()
+		assert.Equal(t, 0, ser2.Len())
+		ReleaseSerializer(ser2)
+	})
+}
+
+func TestDeserializerPool(t *testing.T) {
+	t.Run("acquire and release", func(t *testing.T) {
+		data := hexToBytes("3930000000000000")
+		des := AcquireDeserializer(data)
+		val, err := des.ReadU64()
+		require.NoError(t, err)
+		assert.Equal(t, uint64(12345), val)
+		ReleaseDeserializer(des)
+	})
+}
+
+// ==========================================================================
+// BENCHMARKS
+// ==========================================================================
+
+func BenchmarkSerializeU64(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ser := NewSerializer()
+		ser.WriteU64(uint64(i))
+		_ = ser.Bytes()
+	}
+}
+
+func BenchmarkSerializeU64WithPool(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ser := AcquireSerializer()
+		ser.WriteU64(uint64(i))
+		_ = ser.Bytes()
+		ReleaseSerializer(ser)
+	}
+}
+
+func BenchmarkSerializeU128(b *testing.B) {
+	b.ReportAllocs()
+	value := big.NewInt(0).SetUint64(18446744073709551615)
+	for i := 0; i < b.N; i++ {
+		ser := NewSerializer()
+		ser.WriteU128(value)
+		_ = ser.Bytes()
+	}
+}
+
+func BenchmarkSerializeULEB128(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		ser := NewSerializer()
+		ser.WriteULEB128(uint32(i % 128))    // Single byte
+		ser.WriteULEB128(uint32(16384 + i))  // Multi-byte
+		_ = ser.Bytes()
+	}
+}
+
+func BenchmarkDeserializeU64(b *testing.B) {
+	data := hexToBytes("ffffffffffffffff")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		des := NewDeserializer(data)
+		_, _ = des.ReadU64()
+	}
+}
+
+func BenchmarkDeserializeU64WithPool(b *testing.B) {
+	data := hexToBytes("ffffffffffffffff")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		des := AcquireDeserializer(data)
+		_, _ = des.ReadU64()
+		ReleaseDeserializer(des)
+	}
+}
+
+func BenchmarkDeserializeU128(b *testing.B) {
+	data := hexToBytes("ffffffffffffffffffffffffffffffff")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		des := NewDeserializer(data)
+		_, _ = des.ReadU128()
+	}
+}
+
+func BenchmarkDeserializeULEB128(b *testing.B) {
+	// Single byte value (0x7f = 127)
+	data := hexToBytes("7f")
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		des := NewDeserializer(data)
+		_, _ = des.ReadULEB128()
+	}
+}
+
+func BenchmarkSerializeVector1000U64(b *testing.B) {
+	values := make([]uint64, 1000)
+	for i := range values {
+		values[i] = uint64(i)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ser := NewSerializerWithCapacity(8010) // Pre-allocate for better perf
+		ser.WriteU64Slice(values)
+		_ = ser.Bytes()
+	}
+}
+
+func BenchmarkDeserializeVector1000U64(b *testing.B) {
+	values := make([]uint64, 1000)
+	for i := range values {
+		values[i] = uint64(i)
+	}
+	ser := NewSerializer()
+	ser.WriteU64Slice(values)
+	data := ser.Bytes()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		des := NewDeserializer(data)
+		_, _ = des.ReadU64Slice()
+	}
+}

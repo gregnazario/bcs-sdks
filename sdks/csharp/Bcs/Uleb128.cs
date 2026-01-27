@@ -13,6 +13,19 @@ public static class Uleb128
     /// <summary>Maximum value that can be encoded (u32 max).</summary>
     public const uint MaxU32 = uint.MaxValue;
 
+    // Pre-allocated arrays for common small values (0-127 need only 1 byte)
+    private static readonly byte[][] SmallValueCache = CreateSmallValueCache();
+
+    private static byte[][] CreateSmallValueCache()
+    {
+        var cache = new byte[128][];
+        for (var i = 0; i < 128; i++)
+        {
+            cache[i] = [(byte)i];
+        }
+        return cache;
+    }
+
     /// <summary>
     /// Encodes an unsigned integer as ULEB128.
     /// </summary>
@@ -20,15 +33,36 @@ public static class Uleb128
     /// <returns>The ULEB128 encoded bytes.</returns>
     public static byte[] Encode(uint value)
     {
-        if (value == 0)
+        // Fast path for small values (most common case - vector lengths, etc.)
+        if (value < 128)
         {
-            return [0];
+            return SmallValueCache[value];
         }
 
-        var result = new List<byte>(5);
+        // Fast path for 2-byte values (128-16383)
+        if (value < 0x4000)
+        {
+            return [(byte)((value & 0x7F) | 0x80), (byte)(value >> 7)];
+        }
+
+        // General case: use stackalloc and copy
+        Span<byte> buffer = stackalloc byte[5];
+        var length = EncodeTo(buffer, value);
+        return buffer[..length].ToArray();
+    }
+
+    /// <summary>
+    /// Encodes a ULEB128 value directly into a span.
+    /// </summary>
+    /// <param name="destination">The destination span (must be at least 5 bytes).</param>
+    /// <param name="value">The value to encode.</param>
+    /// <returns>The number of bytes written.</returns>
+    public static int EncodeTo(Span<byte> destination, uint value)
+    {
+        var pos = 0;
         var remaining = value;
 
-        while (remaining > 0)
+        do
         {
             var b = (byte)(remaining & 0x7F);
             remaining >>= 7;
@@ -36,10 +70,10 @@ public static class Uleb128
             {
                 b |= 0x80;
             }
-            result.Add(b);
-        }
+            destination[pos++] = b;
+        } while (remaining != 0);
 
-        return result.ToArray();
+        return pos;
     }
 
     /// <summary>

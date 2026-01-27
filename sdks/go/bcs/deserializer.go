@@ -3,8 +3,27 @@ package bcs
 import (
 	"encoding/binary"
 	"math/big"
+	"sync"
 	"unicode/utf8"
 )
+
+// Pre-computed constants for signed integer conversion to avoid repeated allocations.
+var (
+	signBit128  *big.Int
+	signBit256  *big.Int
+	modulus128  *big.Int
+	modulus256  *big.Int
+	initBigOnce sync.Once
+)
+
+func initBigConstants() {
+	initBigOnce.Do(func() {
+		signBit128 = new(big.Int).Lsh(big.NewInt(1), 127)
+		signBit256 = new(big.Int).Lsh(big.NewInt(1), 255)
+		modulus128 = new(big.Int).Lsh(big.NewInt(1), 128)
+		modulus256 = new(big.Int).Lsh(big.NewInt(1), 256)
+	})
+}
 
 // Deserializer provides methods for BCS deserialization.
 type Deserializer struct {
@@ -12,9 +31,34 @@ type Deserializer struct {
 	offset int
 }
 
+// deserializerPool provides reusable Deserializer instances.
+var deserializerPool = sync.Pool{
+	New: func() interface{} {
+		return &Deserializer{}
+	},
+}
+
 // NewDeserializer creates a new BCS deserializer.
 func NewDeserializer(data []byte) *Deserializer {
+	initBigConstants()
 	return &Deserializer{data: data, offset: 0}
+}
+
+// AcquireDeserializer gets a Deserializer from the pool and initializes it with data.
+// Call ReleaseDeserializer when done to return it to the pool.
+func AcquireDeserializer(data []byte) *Deserializer {
+	initBigConstants()
+	d := deserializerPool.Get().(*Deserializer)
+	d.data = data
+	d.offset = 0
+	return d
+}
+
+// ReleaseDeserializer returns a Deserializer to the pool for reuse.
+func ReleaseDeserializer(d *Deserializer) {
+	d.data = nil
+	d.offset = 0
+	deserializerPool.Put(d)
 }
 
 // ==========================================================================
@@ -139,27 +183,27 @@ func (d *Deserializer) ReadI64() (int64, error) {
 }
 
 // ReadI128 deserializes a signed 128-bit integer (two's complement, little-endian).
+// Uses cached constants to avoid repeated allocations.
 func (d *Deserializer) ReadI128() (*big.Int, error) {
 	unsigned, err := d.ReadU128()
 	if err != nil {
 		return nil, err
 	}
-	signBit := new(big.Int).Lsh(big.NewInt(1), 127)
-	if unsigned.Cmp(signBit) >= 0 {
-		return new(big.Int).Sub(unsigned, new(big.Int).Lsh(big.NewInt(1), 128)), nil
+	if unsigned.Cmp(signBit128) >= 0 {
+		return new(big.Int).Sub(unsigned, modulus128), nil
 	}
 	return unsigned, nil
 }
 
 // ReadI256 deserializes a signed 256-bit integer (two's complement, little-endian).
+// Uses cached constants to avoid repeated allocations.
 func (d *Deserializer) ReadI256() (*big.Int, error) {
 	unsigned, err := d.ReadU256()
 	if err != nil {
 		return nil, err
 	}
-	signBit := new(big.Int).Lsh(big.NewInt(1), 255)
-	if unsigned.Cmp(signBit) >= 0 {
-		return new(big.Int).Sub(unsigned, new(big.Int).Lsh(big.NewInt(1), 256)), nil
+	if unsigned.Cmp(signBit256) >= 0 {
+		return new(big.Int).Sub(unsigned, modulus256), nil
 	}
 	return unsigned, nil
 }
@@ -169,7 +213,19 @@ func (d *Deserializer) ReadI256() (*big.Int, error) {
 // ==========================================================================
 
 // ReadULEB128 deserializes a ULEB128-encoded unsigned integer.
+// Inlined for performance on the hot path.
 func (d *Deserializer) ReadULEB128() (uint32, error) {
+	// Fast path: single byte (values 0-127)
+	if d.offset >= len(d.data) {
+		return 0, NewUnexpectedEOF()
+	}
+	b := d.data[d.offset]
+	if b < 0x80 {
+		d.offset++
+		return uint32(b), nil
+	}
+
+	// Slow path: multi-byte encoding
 	value, bytesRead, err := DecodeULEB128WithOffset(d.data, d.offset)
 	if err != nil {
 		return 0, err
@@ -207,12 +263,26 @@ func (d *Deserializer) ReadString() (string, error) {
 }
 
 // ReadFixedBytes deserializes fixed-length bytes (no length prefix).
+// Returns a copy of the bytes.
 func (d *Deserializer) ReadFixedBytes(length int) ([]byte, error) {
 	if err := d.ensureBytes(length); err != nil {
 		return nil, err
 	}
 	result := make([]byte, length)
 	copy(result, d.data[d.offset:d.offset+length])
+	d.offset += length
+	return result, nil
+}
+
+// ReadFixedBytesNoCopy deserializes fixed-length bytes without copying.
+// WARNING: The returned slice is a view into the deserializer's internal buffer.
+// Do not modify the returned slice and do not use it after the deserializer
+// is released or reused. Use ReadFixedBytes if you need to own the data.
+func (d *Deserializer) ReadFixedBytesNoCopy(length int) ([]byte, error) {
+	if err := d.ensureBytes(length); err != nil {
+		return nil, err
+	}
+	result := d.data[d.offset : d.offset+length]
 	d.offset += length
 	return result, nil
 }
@@ -283,6 +353,98 @@ func (d *Deserializer) SliceFrom(start int) []byte {
 }
 
 // ==========================================================================
+// BATCH OPERATIONS
+// ==========================================================================
+
+// ReadU8Slice reads a vector of u8 values (length-prefixed).
+// More efficient than calling ReadVectorLen + ReadU8 in a loop.
+// Returns a copy of the data.
+func (d *Deserializer) ReadU8Slice() ([]byte, error) {
+	length, err := d.ReadVectorLen()
+	if err != nil {
+		return nil, err
+	}
+	return d.ReadFixedBytes(int(length))
+}
+
+// ReadU8SliceNoCopy reads a vector of u8 values without copying.
+// WARNING: The returned slice is a view into the deserializer's internal buffer.
+func (d *Deserializer) ReadU8SliceNoCopy() ([]byte, error) {
+	length, err := d.ReadVectorLen()
+	if err != nil {
+		return nil, err
+	}
+	return d.ReadFixedBytesNoCopy(int(length))
+}
+
+// ReadU16Slice reads a vector of u16 values (length-prefixed).
+func (d *Deserializer) ReadU16Slice() ([]uint16, error) {
+	length, err := d.ReadVectorLen()
+	if err != nil {
+		return nil, err
+	}
+	if err := d.ensureBytes(int(length) * 2); err != nil {
+		return nil, err
+	}
+	result := make([]uint16, length)
+	for i := range result {
+		result[i] = binary.LittleEndian.Uint16(d.data[d.offset:])
+		d.offset += 2
+	}
+	return result, nil
+}
+
+// ReadU32Slice reads a vector of u32 values (length-prefixed).
+func (d *Deserializer) ReadU32Slice() ([]uint32, error) {
+	length, err := d.ReadVectorLen()
+	if err != nil {
+		return nil, err
+	}
+	if err := d.ensureBytes(int(length) * 4); err != nil {
+		return nil, err
+	}
+	result := make([]uint32, length)
+	for i := range result {
+		result[i] = binary.LittleEndian.Uint32(d.data[d.offset:])
+		d.offset += 4
+	}
+	return result, nil
+}
+
+// ReadU64Slice reads a vector of u64 values (length-prefixed).
+func (d *Deserializer) ReadU64Slice() ([]uint64, error) {
+	length, err := d.ReadVectorLen()
+	if err != nil {
+		return nil, err
+	}
+	if err := d.ensureBytes(int(length) * 8); err != nil {
+		return nil, err
+	}
+	result := make([]uint64, length)
+	for i := range result {
+		result[i] = binary.LittleEndian.Uint64(d.data[d.offset:])
+		d.offset += 8
+	}
+	return result, nil
+}
+
+// ReadStringSlice reads a vector of strings (length-prefixed).
+func (d *Deserializer) ReadStringSlice() ([]string, error) {
+	length, err := d.ReadVectorLen()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, length)
+	for i := range result {
+		result[i], err = d.ReadString()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+// ==========================================================================
 // UTILITY
 // ==========================================================================
 
@@ -311,11 +473,29 @@ func (d *Deserializer) ensureBytes(count int) error {
 }
 
 func (d *Deserializer) readBigIntLE(byteLength int) *big.Int {
-	// Read little-endian bytes and convert to big-endian for big.Int
-	b := make([]byte, byteLength)
-	for i := 0; i < byteLength; i++ {
-		b[byteLength-1-i] = d.data[d.offset+i]
+	// Use stack-allocated arrays for common sizes to avoid heap allocation
+	switch byteLength {
+	case 16:
+		var b [16]byte
+		for i := 0; i < 16; i++ {
+			b[15-i] = d.data[d.offset+i]
+		}
+		d.offset += 16
+		return new(big.Int).SetBytes(b[:])
+	case 32:
+		var b [32]byte
+		for i := 0; i < 32; i++ {
+			b[31-i] = d.data[d.offset+i]
+		}
+		d.offset += 32
+		return new(big.Int).SetBytes(b[:])
+	default:
+		// Fallback for other sizes (rare)
+		b := make([]byte, byteLength)
+		for i := 0; i < byteLength; i++ {
+			b[byteLength-1-i] = d.data[d.offset+i]
+		}
+		d.offset += byteLength
+		return new(big.Int).SetBytes(b)
 	}
-	d.offset += byteLength
-	return new(big.Int).SetBytes(b)
 }

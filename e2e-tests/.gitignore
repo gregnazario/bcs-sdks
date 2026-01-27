@@ -1,10 +1,77 @@
 # Generated test data
 test-data/
 
+# Benchmark results
+benchmark_results.json
+
 # Rust build artifacts
 reference/target/
+runners/rust_runner/target/
 
-# Compiled runners
-runners/*.exe
-runners/cpp_runner
+# C/C++ compiled binaries
 runners/c_runner
+runners/cpp_runner
+runners/*.exe
+runners/*.o
+runners/*.obj
+
+# C# build artifacts
+runners/CSharpRunner/bin/
+runners/CSharpRunner/obj/
+
+# Dart artifacts
+runners/.dart_tool/
+runners/.packages
+runners/pubspec.lock
+
+# Elixir artifacts
+runners/_build/
+runners/.elixir_ls/
+runners/deps/
+
+# Go artifacts
+runners/go_runner
+
+# Haskell artifacts
+runners/haskell_runner
+runners/*.hi
+runners/*.o
+
+# Java artifacts
+runners/*.class
+runners/java_runner.class
+
+# Kotlin artifacts
+runners/kotlin_runner/build/
+runners/kotlin_runner/.gradle/
+runners/kotlin_runner/.kotlin/
+runners/kotlin_runner.jar
+
+# OCaml artifacts
+runners/ocaml_runner
+runners/*.cmi
+runners/*.cmo
+runners/*.cmx
+runners/*.cma
+runners/*.cmxa
+
+# Python artifacts
+runners/__pycache__/
+runners/*.pyc
+runners/*.pyo
+
+# Swift artifacts
+runners/.build/
+runners/.swiftpm/
+runners/swift_runner
+
+# TypeScript/Node artifacts
+runners/node_modules/
+runners/*.js
+runners/*.js.map
+runners/package-lock.json
+
+# Zig artifacts
+runners/zig-cache/
+runners/zig-out/
+runners/zig_runner

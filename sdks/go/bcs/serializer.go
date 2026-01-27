@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"math/big"
 	"sort"
+	"sync"
 )
 
 // MaxSequenceLength is the maximum allowed sequence length.
@@ -13,14 +14,66 @@ const MaxSequenceLength = (1 << 31) - 1
 // MaxContainerDepth is the maximum allowed container nesting depth.
 const MaxContainerDepth = 500
 
+// defaultBufferCapacity is the default initial buffer size.
+const defaultBufferCapacity = 256
+
+// Pre-computed modulus values for signed integer serialization.
+var (
+	serModulus128  *big.Int
+	serModulus256  *big.Int
+	initSerOnce    sync.Once
+)
+
+func initSerConstants() {
+	initSerOnce.Do(func() {
+		serModulus128 = new(big.Int).Lsh(big.NewInt(1), 128)
+		serModulus256 = new(big.Int).Lsh(big.NewInt(1), 256)
+	})
+}
+
 // Serializer provides methods for BCS serialization.
 type Serializer struct {
 	buf bytes.Buffer
 }
 
+// serializerPool provides reusable Serializer instances.
+var serializerPool = sync.Pool{
+	New: func() interface{} {
+		s := &Serializer{}
+		s.buf.Grow(defaultBufferCapacity)
+		return s
+	},
+}
+
 // NewSerializer creates a new BCS serializer.
 func NewSerializer() *Serializer {
-	return &Serializer{}
+	initSerConstants()
+	s := &Serializer{}
+	s.buf.Grow(defaultBufferCapacity)
+	return s
+}
+
+// NewSerializerWithCapacity creates a new BCS serializer with pre-allocated buffer capacity.
+// Use this when you know the approximate size of the output to reduce allocations.
+func NewSerializerWithCapacity(capacity int) *Serializer {
+	initSerConstants()
+	s := &Serializer{}
+	s.buf.Grow(capacity)
+	return s
+}
+
+// AcquireSerializer gets a Serializer from the pool.
+// Call ReleaseSerializer when done to return it to the pool.
+func AcquireSerializer() *Serializer {
+	initSerConstants()
+	return serializerPool.Get().(*Serializer)
+}
+
+// ReleaseSerializer returns a Serializer to the pool for reuse.
+// The serializer is reset before being returned to the pool.
+func ReleaseSerializer(s *Serializer) {
+	s.Reset()
+	serializerPool.Put(s)
 }
 
 // ==========================================================================
@@ -118,20 +171,22 @@ func (s *Serializer) WriteI64(value int64) *Serializer {
 }
 
 // WriteI128 serializes a signed 128-bit integer (two's complement, little-endian).
+// Uses cached modulus to avoid repeated allocations.
 func (s *Serializer) WriteI128(value *big.Int) *Serializer {
 	unsigned := value
 	if value.Sign() < 0 {
-		unsigned = new(big.Int).Add(value, new(big.Int).Lsh(big.NewInt(1), 128))
+		unsigned = new(big.Int).Add(value, serModulus128)
 	}
 	s.writeBigIntLE(unsigned, 16)
 	return s
 }
 
 // WriteI256 serializes a signed 256-bit integer (two's complement, little-endian).
+// Uses cached modulus to avoid repeated allocations.
 func (s *Serializer) WriteI256(value *big.Int) *Serializer {
 	unsigned := value
 	if value.Sign() < 0 {
-		unsigned = new(big.Int).Add(value, new(big.Int).Lsh(big.NewInt(1), 256))
+		unsigned = new(big.Int).Add(value, serModulus256)
 	}
 	s.writeBigIntLE(unsigned, 32)
 	return s
@@ -142,9 +197,11 @@ func (s *Serializer) WriteI256(value *big.Int) *Serializer {
 // ==========================================================================
 
 // WriteULEB128 serializes a ULEB128-encoded unsigned integer.
+// Writes directly to the buffer without intermediate allocation.
 func (s *Serializer) WriteULEB128(value uint32) *Serializer {
-	encoded := EncodeULEB128(value)
-	s.buf.Write(encoded)
+	var buf [maxULEB128Bytes]byte
+	n := encodeULEB128Into(buf[:], value)
+	s.buf.Write(buf[:n])
 	return s
 }
 
@@ -173,6 +230,83 @@ func (s *Serializer) WriteFixedBytes(value []byte, length int) *Serializer {
 		panic(NewValueOutOfRange("fixed_bytes", len(value)))
 	}
 	s.buf.Write(value)
+	return s
+}
+
+// WriteRawBytes writes bytes directly without any length prefix or validation.
+// Use this for performance-critical paths where you've already validated the data.
+func (s *Serializer) WriteRawBytes(value []byte) *Serializer {
+	s.buf.Write(value)
+	return s
+}
+
+// ==========================================================================
+// BATCH OPERATIONS
+// ==========================================================================
+
+// WriteU8Slice writes a slice of u8 values as a vector (length-prefixed).
+// More efficient than calling WriteVectorLen + WriteU8 in a loop.
+func (s *Serializer) WriteU8Slice(values []byte) *Serializer {
+	if len(values) > MaxSequenceLength {
+		panic(NewExceededMaxLength(uint64(len(values))))
+	}
+	s.WriteULEB128(uint32(len(values)))
+	s.buf.Write(values)
+	return s
+}
+
+// WriteU16Slice writes a slice of u16 values as a vector (length-prefixed).
+func (s *Serializer) WriteU16Slice(values []uint16) *Serializer {
+	if len(values) > MaxSequenceLength {
+		panic(NewExceededMaxLength(uint64(len(values))))
+	}
+	s.WriteULEB128(uint32(len(values)))
+	// Pre-allocate buffer for all values
+	var buf [2]byte
+	for _, v := range values {
+		binary.LittleEndian.PutUint16(buf[:], v)
+		s.buf.Write(buf[:])
+	}
+	return s
+}
+
+// WriteU32Slice writes a slice of u32 values as a vector (length-prefixed).
+func (s *Serializer) WriteU32Slice(values []uint32) *Serializer {
+	if len(values) > MaxSequenceLength {
+		panic(NewExceededMaxLength(uint64(len(values))))
+	}
+	s.WriteULEB128(uint32(len(values)))
+	var buf [4]byte
+	for _, v := range values {
+		binary.LittleEndian.PutUint32(buf[:], v)
+		s.buf.Write(buf[:])
+	}
+	return s
+}
+
+// WriteU64Slice writes a slice of u64 values as a vector (length-prefixed).
+func (s *Serializer) WriteU64Slice(values []uint64) *Serializer {
+	if len(values) > MaxSequenceLength {
+		panic(NewExceededMaxLength(uint64(len(values))))
+	}
+	s.WriteULEB128(uint32(len(values)))
+	var buf [8]byte
+	for _, v := range values {
+		binary.LittleEndian.PutUint64(buf[:], v)
+		s.buf.Write(buf[:])
+	}
+	return s
+}
+
+// WriteStringSlice writes a slice of strings as a vector (length-prefixed).
+func (s *Serializer) WriteStringSlice(values []string) *Serializer {
+	if len(values) > MaxSequenceLength {
+		panic(NewExceededMaxLength(uint64(len(values))))
+	}
+	s.WriteULEB128(uint32(len(values)))
+	for _, v := range values {
+		s.WriteString(v)
+	}
 	return s
 }
 
@@ -263,13 +397,30 @@ func (s *Serializer) Reset() {
 // ==========================================================================
 
 func (s *Serializer) writeBigIntLE(value *big.Int, byteLength int) {
-	b := make([]byte, byteLength)
-	valueBytes := value.Bytes()
-
-	// Copy in reverse order (big-endian to little-endian)
-	for i := 0; i < len(valueBytes) && i < byteLength; i++ {
-		b[i] = valueBytes[len(valueBytes)-1-i]
+	// Use stack-allocated arrays for common sizes to avoid heap allocation
+	switch byteLength {
+	case 16:
+		var b [16]byte
+		s.fillBigIntLE(b[:], value)
+		s.buf.Write(b[:])
+	case 32:
+		var b [32]byte
+		s.fillBigIntLE(b[:], value)
+		s.buf.Write(b[:])
+	default:
+		// Fallback for other sizes (rare)
+		b := make([]byte, byteLength)
+		s.fillBigIntLE(b, value)
+		s.buf.Write(b)
 	}
+}
 
-	s.buf.Write(b)
+// fillBigIntLE fills buf with the little-endian representation of value.
+// buf must be zeroed or the caller must ensure proper initialization.
+func (s *Serializer) fillBigIntLE(buf []byte, value *big.Int) {
+	valueBytes := value.Bytes()
+	// Copy in reverse order (big-endian to little-endian)
+	for i := 0; i < len(valueBytes) && i < len(buf); i++ {
+		buf[i] = valueBytes[len(valueBytes)-1-i]
+	}
 }

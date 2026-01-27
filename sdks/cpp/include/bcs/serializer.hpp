@@ -25,6 +25,9 @@ class Serializer {
    public:
     Serializer() : depth_(0) { buffer_.reserve(256); }
 
+    /// Pre-allocate buffer capacity
+    void reserve(size_t capacity) { buffer_.reserve(capacity); }
+
     /// Write a boolean value
     Serializer& write_bool(bool value) {
         buffer_.push_back(value ? 1 : 0);
@@ -45,8 +48,11 @@ class Serializer {
 
     /// Write an unsigned 16-bit integer (little-endian)
     Serializer& write_u16(uint16_t value) {
-        buffer_.push_back(static_cast<uint8_t>(value & 0xFF));
-        buffer_.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
+        // Reserve and write in bulk for better performance
+        const size_t pos = buffer_.size();
+        buffer_.resize(pos + 2);
+        buffer_[pos] = static_cast<uint8_t>(value);
+        buffer_[pos + 1] = static_cast<uint8_t>(value >> 8);
         return *this;
     }
 
@@ -57,10 +63,13 @@ class Serializer {
 
     /// Write an unsigned 32-bit integer (little-endian)
     Serializer& write_u32(uint32_t value) {
-        buffer_.push_back(static_cast<uint8_t>(value & 0xFF));
-        buffer_.push_back(static_cast<uint8_t>((value >> 8) & 0xFF));
-        buffer_.push_back(static_cast<uint8_t>((value >> 16) & 0xFF));
-        buffer_.push_back(static_cast<uint8_t>((value >> 24) & 0xFF));
+        // Reserve and write in bulk - unrolled for performance
+        const size_t pos = buffer_.size();
+        buffer_.resize(pos + 4);
+        buffer_[pos] = static_cast<uint8_t>(value);
+        buffer_[pos + 1] = static_cast<uint8_t>(value >> 8);
+        buffer_[pos + 2] = static_cast<uint8_t>(value >> 16);
+        buffer_[pos + 3] = static_cast<uint8_t>(value >> 24);
         return *this;
     }
 
@@ -71,9 +80,17 @@ class Serializer {
 
     /// Write an unsigned 64-bit integer (little-endian)
     Serializer& write_u64(uint64_t value) {
-        for (int i = 0; i < 8; ++i) {
-            buffer_.push_back(static_cast<uint8_t>((value >> (i * 8)) & 0xFF));
-        }
+        // Reserve and write in bulk - unrolled for performance
+        const size_t pos = buffer_.size();
+        buffer_.resize(pos + 8);
+        buffer_[pos] = static_cast<uint8_t>(value);
+        buffer_[pos + 1] = static_cast<uint8_t>(value >> 8);
+        buffer_[pos + 2] = static_cast<uint8_t>(value >> 16);
+        buffer_[pos + 3] = static_cast<uint8_t>(value >> 24);
+        buffer_[pos + 4] = static_cast<uint8_t>(value >> 32);
+        buffer_[pos + 5] = static_cast<uint8_t>(value >> 40);
+        buffer_[pos + 6] = static_cast<uint8_t>(value >> 48);
+        buffer_[pos + 7] = static_cast<uint8_t>(value >> 56);
         return *this;
     }
 
@@ -84,52 +101,65 @@ class Serializer {
 
     /// Write an unsigned 128-bit integer (little-endian byte array)
     Serializer& write_u128(const u128& value) {
-        buffer_.insert(buffer_.end(), value.begin(), value.end());
+        const size_t pos = buffer_.size();
+        buffer_.resize(pos + 16);
+        std::memcpy(buffer_.data() + pos, value.data(), 16);
         return *this;
     }
 
     /// Write a signed 128-bit integer (little-endian byte array)
     Serializer& write_i128(const i128& value) {
-        buffer_.insert(buffer_.end(), value.begin(), value.end());
+        const size_t pos = buffer_.size();
+        buffer_.resize(pos + 16);
+        std::memcpy(buffer_.data() + pos, value.data(), 16);
         return *this;
     }
 
     /// Write an unsigned 256-bit integer (little-endian byte array)
     Serializer& write_u256(const u256& value) {
-        buffer_.insert(buffer_.end(), value.begin(), value.end());
+        const size_t pos = buffer_.size();
+        buffer_.resize(pos + 32);
+        std::memcpy(buffer_.data() + pos, value.data(), 32);
         return *this;
     }
 
     /// Write a signed 256-bit integer (little-endian byte array)
     Serializer& write_i256(const i256& value) {
-        buffer_.insert(buffer_.end(), value.begin(), value.end());
+        const size_t pos = buffer_.size();
+        buffer_.resize(pos + 32);
+        std::memcpy(buffer_.data() + pos, value.data(), 32);
         return *this;
     }
 
     /// Write a ULEB128-encoded length
     Serializer& write_uleb128(uint32_t value) {
-        auto encoded = uleb128::encode(value);
+        // Use stack-allocated buffer to avoid heap allocation
+        auto encoded = uleb128::encode_to_buffer(value);
         buffer_.insert(buffer_.end(), encoded.begin(), encoded.end());
         return *this;
     }
 
     /// Write raw bytes (without length prefix)
     Serializer& write_fixed_bytes(const uint8_t* data, size_t len) {
-        buffer_.insert(buffer_.end(), data, data + len);
+        const size_t pos = buffer_.size();
+        buffer_.resize(pos + len);
+        std::memcpy(buffer_.data() + pos, data, len);
         return *this;
     }
 
     /// Write raw bytes (without length prefix) from vector
     Serializer& write_fixed_bytes(const std::vector<uint8_t>& data) {
-        buffer_.insert(buffer_.end(), data.begin(), data.end());
-        return *this;
+        return write_fixed_bytes(data.data(), data.size());
     }
 
     /// Write bytes with ULEB128 length prefix
     Serializer& write_bytes(const uint8_t* data, size_t len) {
         check_sequence_length(len);
+        // Pre-calculate total size needed
+        const size_t uleb_size = uleb128::encoded_size(static_cast<uint32_t>(len));
+        buffer_.reserve(buffer_.size() + uleb_size + len);
         write_uleb128(static_cast<uint32_t>(len));
-        buffer_.insert(buffer_.end(), data, data + len);
+        write_fixed_bytes(data, len);
         return *this;
     }
 

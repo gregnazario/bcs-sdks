@@ -18,6 +18,10 @@
     </module>
     <module name="FileTabCharacter"/>
     <module name="NewlineAtEndOfFile"/>
+    <module name="LineLength">
+        <property name="max" value="120"/>
+        <property name="ignorePattern" value="^package.*|^import.*|a]"/>
+    </module>
 
     <module name="TreeWalker">
         <!-- Naming conventions -->
@@ -37,10 +41,6 @@
         <module name="UnusedImports"/>
 
         <!-- Size limits -->
-        <module name="LineLength">
-            <property name="max" value="120"/>
-            <property name="ignorePattern" value="^package.*|^import.*|a]"/>
-        </module>
         <module name="MethodLength">
             <property name="max" value="150"/>
         </module>

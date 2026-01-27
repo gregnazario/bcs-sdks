@@ -26,6 +26,7 @@
 const std = @import("std");
 const mem = std.mem;
 const Allocator = std.mem.Allocator;
+const native_endian = @import("builtin").cpu.arch.endian();
 
 // ============================================================================
 // Constants
@@ -39,6 +40,9 @@ pub const max_container_depth: u16 = 500;
 
 /// Maximum bytes for ULEB128 encoding of u32
 pub const max_uleb128_bytes: usize = 5;
+
+/// Default initial buffer capacity for serializer
+pub const default_capacity: usize = 256;
 
 // ============================================================================
 // Errors
@@ -153,6 +157,16 @@ pub const Serializer = struct {
         };
     }
 
+    /// Initialize with pre-allocated capacity to reduce allocations
+    pub fn initCapacity(allocator: Allocator, capacity: usize) Allocator.Error!Self {
+        var buffer = std.ArrayList(u8){};
+        try buffer.ensureTotalCapacity(allocator, capacity);
+        return .{
+            .buffer = buffer,
+            .allocator = allocator,
+        };
+    }
+
     /// Deinitialize and free resources
     pub fn deinit(self: *Self) void {
         self.buffer.deinit(self.allocator);
@@ -179,26 +193,38 @@ pub const Serializer = struct {
         return self.buffer.items.len;
     }
 
+    /// Ensure capacity for additional bytes (reduces reallocations)
+    pub fn ensureCapacity(self: *Self, additional: usize) Error!void {
+        self.buffer.ensureUnusedCapacity(self.allocator, additional) catch return Error.OutOfMemory;
+    }
+
     // --------------------------------------------------------------------
     // Internal helpers
     // --------------------------------------------------------------------
 
-    fn appendByte(self: *Self, byte: u8) Error!void {
+    inline fn appendByte(self: *Self, byte: u8) Error!void {
         self.buffer.append(self.allocator, byte) catch return Error.OutOfMemory;
     }
 
-    fn appendBytes(self: *Self, bytes: []const u8) Error!void {
+    inline fn appendBytes(self: *Self, bytes: []const u8) Error!void {
         self.buffer.appendSlice(self.allocator, bytes) catch return Error.OutOfMemory;
     }
 
-    fn enterContainer(self: *Self) Error!void {
+    /// Write N bytes directly, returning pointer to write location
+    inline fn reserveBytes(self: *Self, comptime n: usize) Error!*[n]u8 {
+        const old_len = self.buffer.items.len;
+        self.buffer.resize(self.allocator, old_len + n) catch return Error.OutOfMemory;
+        return self.buffer.items[old_len..][0..n];
+    }
+
+    inline fn enterContainer(self: *Self) Error!void {
         if (self.depth >= max_container_depth) {
             return Error.ExceededContainerDepth;
         }
         self.depth += 1;
     }
 
-    fn leaveContainer(self: *Self) void {
+    inline fn leaveContainer(self: *Self) void {
         if (self.depth > 0) self.depth -= 1;
     }
 
@@ -206,47 +232,36 @@ pub const Serializer = struct {
     // Boolean
     // --------------------------------------------------------------------
 
-    pub fn writeBool(self: *Self, value: bool) Error!void {
-        try self.appendByte(if (value) 1 else 0);
+    pub inline fn writeBool(self: *Self, value: bool) Error!void {
+        try self.appendByte(@intFromBool(value));
     }
 
     // --------------------------------------------------------------------
-    // Unsigned Integers
+    // Unsigned Integers (using std.mem for optimized writes)
     // --------------------------------------------------------------------
 
-    pub fn writeU8(self: *Self, value: u8) Error!void {
+    pub inline fn writeU8(self: *Self, value: u8) Error!void {
         try self.appendByte(value);
     }
 
-    pub fn writeU16(self: *Self, value: u16) Error!void {
-        var bytes: [2]u8 = undefined;
-        bytes[0] = @truncate(value);
-        bytes[1] = @truncate(value >> 8);
-        try self.appendBytes(&bytes);
+    pub inline fn writeU16(self: *Self, value: u16) Error!void {
+        const ptr = try self.reserveBytes(2);
+        mem.writeInt(u16, ptr, value, .little);
     }
 
-    pub fn writeU32(self: *Self, value: u32) Error!void {
-        var bytes: [4]u8 = undefined;
-        inline for (0..4) |i| {
-            bytes[i] = @truncate(value >> @intCast(i * 8));
-        }
-        try self.appendBytes(&bytes);
+    pub inline fn writeU32(self: *Self, value: u32) Error!void {
+        const ptr = try self.reserveBytes(4);
+        mem.writeInt(u32, ptr, value, .little);
     }
 
-    pub fn writeU64(self: *Self, value: u64) Error!void {
-        var bytes: [8]u8 = undefined;
-        inline for (0..8) |i| {
-            bytes[i] = @truncate(value >> @intCast(i * 8));
-        }
-        try self.appendBytes(&bytes);
+    pub inline fn writeU64(self: *Self, value: u64) Error!void {
+        const ptr = try self.reserveBytes(8);
+        mem.writeInt(u64, ptr, value, .little);
     }
 
-    pub fn writeU128(self: *Self, value: u128) Error!void {
-        var bytes: [16]u8 = undefined;
-        inline for (0..16) |i| {
-            bytes[i] = @truncate(value >> @intCast(i * 8));
-        }
-        try self.appendBytes(&bytes);
+    pub inline fn writeU128(self: *Self, value: u128) Error!void {
+        const ptr = try self.reserveBytes(16);
+        mem.writeInt(u128, ptr, value, .little);
     }
 
     pub fn writeU256(self: *Self, value: [32]u8) Error!void {
@@ -257,23 +272,23 @@ pub const Serializer = struct {
     // Signed Integers
     // --------------------------------------------------------------------
 
-    pub fn writeI8(self: *Self, value: i8) Error!void {
+    pub inline fn writeI8(self: *Self, value: i8) Error!void {
         try self.appendByte(@bitCast(value));
     }
 
-    pub fn writeI16(self: *Self, value: i16) Error!void {
+    pub inline fn writeI16(self: *Self, value: i16) Error!void {
         try self.writeU16(@bitCast(value));
     }
 
-    pub fn writeI32(self: *Self, value: i32) Error!void {
+    pub inline fn writeI32(self: *Self, value: i32) Error!void {
         try self.writeU32(@bitCast(value));
     }
 
-    pub fn writeI64(self: *Self, value: i64) Error!void {
+    pub inline fn writeI64(self: *Self, value: i64) Error!void {
         try self.writeU64(@bitCast(value));
     }
 
-    pub fn writeI128(self: *Self, value: i128) Error!void {
+    pub inline fn writeI128(self: *Self, value: i128) Error!void {
         try self.writeU128(@bitCast(value));
     }
 
@@ -282,10 +297,15 @@ pub const Serializer = struct {
     }
 
     // --------------------------------------------------------------------
-    // ULEB128
+    // ULEB128 (optimized inline encoding)
     // --------------------------------------------------------------------
 
     pub fn writeUleb128(self: *Self, value: u32) Error!void {
+        // Fast path for common small values (0-127)
+        if (value < 0x80) {
+            try self.appendByte(@truncate(value));
+            return;
+        }
         var buf: [max_uleb128_bytes]u8 = undefined;
         const len = encodeUleb128(value, &buf);
         try self.appendBytes(buf[0..len]);
@@ -330,6 +350,63 @@ pub const Serializer = struct {
         try self.writeUleb128(@intCast(len));
     }
 
+    /// Write an optional value
+    pub fn writeOption(self: *Self, value: anytype, writeValue: fn (*Self, @TypeOf(value).Child) Error!void) Error!void {
+        if (value) |v| {
+            try self.writeOptionSome();
+            try writeValue(self, v);
+        } else {
+            try self.writeOptionNone();
+        }
+    }
+
+    // --------------------------------------------------------------------
+    // Generic Integer Write (comptime type selection)
+    // --------------------------------------------------------------------
+
+    /// Write any integer type in BCS format (little-endian)
+    pub fn writeInt(self: *Self, comptime T: type, value: T) Error!void {
+        const info = @typeInfo(T);
+        if (info != .int) @compileError("writeInt requires an integer type");
+
+        const bits = info.int.bits;
+        const bytes = @divExact(bits, 8);
+
+        if (bytes == 1) {
+            try self.appendByte(@bitCast(value));
+        } else {
+            const ptr = try self.reserveBytes(bytes);
+            mem.writeInt(T, ptr, value, .little);
+        }
+    }
+
+    // --------------------------------------------------------------------
+    // Batch Vector Operations (optimized for common cases)
+    // --------------------------------------------------------------------
+
+    /// Write a vector of u8 (bytes with length prefix) - optimized
+    pub fn writeU8Vector(self: *Self, values: []const u8) Error!void {
+        try self.writeBytes(values);
+    }
+
+    /// Write a vector of integers - type-generic batch operation
+    pub fn writeIntVector(self: *Self, comptime T: type, values: []const T) Error!void {
+        if (values.len > max_sequence_length) return Error.ExceededMaxLength;
+        try self.writeUleb128(@intCast(values.len));
+
+        const info = @typeInfo(T);
+        if (info != .int) @compileError("writeIntVector requires an integer type");
+
+        const bytes_per_elem = @divExact(info.int.bits, 8);
+
+        // Pre-allocate for all elements
+        try self.ensureCapacity(values.len * bytes_per_elem);
+
+        for (values) |v| {
+            try self.writeInt(T, v);
+        }
+    }
+
     // --------------------------------------------------------------------
     // Container Depth
     // --------------------------------------------------------------------
@@ -370,7 +447,7 @@ pub const Deserializer = struct {
     }
 
     /// Get remaining bytes count
-    pub fn remaining(self: *const Self) usize {
+    pub inline fn remaining(self: *const Self) usize {
         return self.data.len - self.offset;
     }
 
@@ -381,29 +458,49 @@ pub const Deserializer = struct {
         }
     }
 
+    /// Peek at next byte without consuming
+    pub fn peek(self: *const Self) Error!u8 {
+        if (self.offset >= self.data.len) return Error.UnexpectedEof;
+        return self.data[self.offset];
+    }
+
+    /// Skip n bytes
+    pub fn skip(self: *Self, n: usize) Error!void {
+        if (self.remaining() < n) return Error.UnexpectedEof;
+        self.offset += n;
+    }
+
     // --------------------------------------------------------------------
     // Internal helpers
     // --------------------------------------------------------------------
 
-    fn checkRemaining(self: *const Self, n: usize) Error!void {
+    inline fn checkRemaining(self: *const Self, n: usize) Error!void {
         if (self.remaining() < n) return Error.UnexpectedEof;
     }
 
-    fn readByte(self: *Self) Error!u8 {
-        try self.checkRemaining(1);
+    inline fn readByte(self: *Self) Error!u8 {
+        if (self.offset >= self.data.len) return Error.UnexpectedEof;
         const byte = self.data[self.offset];
         self.offset += 1;
         return byte;
     }
 
-    fn enterContainer(self: *Self) Error!void {
+    /// Read N bytes as a fixed array pointer
+    inline fn readNBytes(self: *Self, comptime n: usize) Error!*const [n]u8 {
+        try self.checkRemaining(n);
+        const ptr = self.data[self.offset..][0..n];
+        self.offset += n;
+        return ptr;
+    }
+
+    inline fn enterContainer(self: *Self) Error!void {
         if (self.depth >= max_container_depth) {
             return Error.ExceededContainerDepth;
         }
         self.depth += 1;
     }
 
-    fn leaveContainer(self: *Self) void {
+    inline fn leaveContainer(self: *Self) void {
         if (self.depth > 0) self.depth -= 1;
     }
 
@@ -421,79 +518,59 @@ pub const Deserializer = struct {
     }
 
     // --------------------------------------------------------------------
-    // Unsigned Integers
+    // Unsigned Integers (using std.mem for optimized reads)
     // --------------------------------------------------------------------
 
-    pub fn readU8(self: *Self) Error!u8 {
+    pub inline fn readU8(self: *Self) Error!u8 {
         return self.readByte();
     }
 
-    pub fn readU16(self: *Self) Error!u16 {
-        try self.checkRemaining(2);
-        const b0: u16 = self.data[self.offset];
-        const b1: u16 = self.data[self.offset + 1];
-        self.offset += 2;
-        return b0 | (b1 << 8);
+    pub inline fn readU16(self: *Self) Error!u16 {
+        const ptr = try self.readNBytes(2);
+        return mem.readInt(u16, ptr, .little);
     }
 
-    pub fn readU32(self: *Self) Error!u32 {
-        try self.checkRemaining(4);
-        var result: u32 = 0;
-        inline for (0..4) |i| {
-            result |= @as(u32, self.data[self.offset + i]) << @intCast(i * 8);
-        }
-        self.offset += 4;
-        return result;
+    pub inline fn readU32(self: *Self) Error!u32 {
+        const ptr = try self.readNBytes(4);
+        return mem.readInt(u32, ptr, .little);
     }
 
-    pub fn readU64(self: *Self) Error!u64 {
-        try self.checkRemaining(8);
-        var result: u64 = 0;
-        inline for (0..8) |i| {
-            result |= @as(u64, self.data[self.offset + i]) << @intCast(i * 8);
-        }
-        self.offset += 8;
-        return result;
+    pub inline fn readU64(self: *Self) Error!u64 {
+        const ptr = try self.readNBytes(8);
+        return mem.readInt(u64, ptr, .little);
     }
 
-    pub fn readU128(self: *Self) Error!u128 {
-        try self.checkRemaining(16);
-        var result: u128 = 0;
-        inline for (0..16) |i| {
-            result |= @as(u128, self.data[self.offset + i]) << @intCast(i * 8);
-        }
-        self.offset += 16;
-        return result;
+    pub inline fn readU128(self: *Self) Error!u128 {
+        const ptr = try self.readNBytes(16);
+        return mem.readInt(u128, ptr, .little);
     }
 
     pub fn readU256(self: *Self) Error![32]u8 {
-        try self.checkRemaining(32);
-        const bytes = self.data[self.offset..][0..32];
-        self.offset += 32;
-        return bytes.*;
+        const ptr = try self.readNBytes(32);
+        return ptr.*;
     }
 
     // --------------------------------------------------------------------
     // Signed Integers
     // --------------------------------------------------------------------
 
-    pub fn readI8(self: *Self) Error!i8 {
+    pub inline fn readI8(self: *Self) Error!i8 {
         return @bitCast(try self.readU8());
     }
 
-    pub fn readI16(self: *Self) Error!i16 {
+    pub inline fn readI16(self: *Self) Error!i16 {
         return @bitCast(try self.readU16());
     }
 
-    pub fn readI32(self: *Self) Error!i32 {
+    pub inline fn readI32(self: *Self) Error!i32 {
         return @bitCast(try self.readU32());
     }
 
-    pub fn readI64(self: *Self) Error!i64 {
+    pub inline fn readI64(self: *Self) Error!i64 {
         return @bitCast(try self.readU64());
     }
 
-    pub fn readI128(self: *Self) Error!i128 {
+    pub inline fn readI128(self: *Self) Error!i128 {
         return @bitCast(try self.readU128());
     }
 
@@ -502,10 +579,16 @@ pub const Deserializer = struct {
     }
 
     // --------------------------------------------------------------------
-    // ULEB128
+    // ULEB128 (optimized with fast path)
     // --------------------------------------------------------------------
 
     pub fn readUleb128(self: *Self) Error!u32 {
+        // Fast path for single-byte values (0-127)
+        const first = try self.readByte();
+        if (first < 0x80) return first;
+
+        // Multi-byte path
+        self.offset -= 1; // Rewind
         const result = try decodeUleb128(self.data[self.offset..]);
         self.offset += result.bytes_read;
         return result.value;
@@ -557,6 +640,53 @@ pub const Deserializer = struct {
     }
 
     // --------------------------------------------------------------------
+    // Generic Integer Read (comptime type selection)
+    // --------------------------------------------------------------------
+
+    /// Read any integer type in BCS format (little-endian)
+    pub fn readInt(self: *Self, comptime T: type) Error!T {
+        const info = @typeInfo(T);
+        if (info != .int) @compileError("readInt requires an integer type");
+
+        const bits = info.int.bits;
+        const bytes = @divExact(bits, 8);
+
+        if (bytes == 1) {
+            return @bitCast(try self.readByte());
+        } else {
+            const ptr = try self.readNBytes(bytes);
+            return mem.readInt(T, ptr, .little);
+        }
+    }
+
+    // --------------------------------------------------------------------
+    // Batch Vector Operations
+    // --------------------------------------------------------------------
+
+    /// Read a vector of integers into an ArrayList - allocating version
+    pub fn readIntVector(self: *Self, comptime T: type, allocator: Allocator) (Error || Allocator.Error)!std.ArrayList(T) {
+        const len = try self.readVectorLen();
+        var result = std.ArrayList(T){};
+        try result.ensureTotalCapacity(allocator, len);
+
+        var i: u32 = 0;
+        while (i < len) : (i += 1) {
+            result.appendAssumeCapacity(try self.readInt(T));
+        }
+        return result;
+    }
+
+    /// Read a vector of integers into a provided slice (must be exact size)
+    pub fn readIntVectorInto(self: *Self, comptime T: type, dest: []T) Error!void {
+        const len = try self.readVectorLen();
+        if (len != dest.len) return Error.ExceededMaxLength; // Size mismatch
+
+        for (dest) |*slot| {
+            slot.* = try self.readInt(T);
+        }
+    }
+
+    // --------------------------------------------------------------------
     // Container Depth
     // --------------------------------------------------------------------
 
@@ -582,34 +712,63 @@ pub const Deserializer = struct {
 // Hex Utilities
 // ============================================================================
 
-const hex_chars = "0123456789abcdef";
+const hex_chars_lower = "0123456789abcdef";
+const hex_chars_upper = "0123456789ABCDEF";
 
-/// Convert bytes to hexadecimal string
+/// Convert bytes to hexadecimal string (allocating)
 pub fn bytesToHex(allocator: Allocator, bytes: []const u8) Allocator.Error![]u8 {
     const result = try allocator.alloc(u8, bytes.len * 2);
-    for (bytes, 0..) |byte, i| {
-        result[i * 2] = hex_chars[byte >> 4];
-        result[i * 2 + 1] = hex_chars[byte & 0x0F];
-    }
+    bytesToHexBuf(bytes, result);
     return result;
 }
 
-/// Convert hexadecimal string to bytes
+/// Convert bytes to hexadecimal string (non-allocating, writes to buffer)
+/// Buffer must be at least bytes.len * 2
+pub fn bytesToHexBuf(bytes: []const u8, out: []u8) void {
+    for (bytes, 0..) |byte, i| {
+        out[i * 2] = hex_chars_lower[byte >> 4];
+        out[i * 2 + 1] = hex_chars_lower[byte & 0x0F];
+    }
+}
+
+/// Convert bytes to hex, returning a fixed-size array (comptime known size)
+pub fn bytesToHexArray(comptime N: usize, bytes: *const [N]u8) [N * 2]u8 {
+    var result: [N * 2]u8 = undefined;
+    bytesToHexBuf(bytes, &result);
+    return result;
+}
+
+/// Convert hexadecimal string to bytes (allocating)
 pub fn hexToBytes(allocator: Allocator, hex: []const u8) ![]u8 {
     if (hex.len % 2 != 0) return error.InvalidHexLength;
 
     const result = try allocator.alloc(u8, hex.len / 2);
     errdefer allocator.free(result);
 
-    for (0..result.len) |i| {
-        const high = try hexDigitValue(hex[i * 2]);
-        const low = try hexDigitValue(hex[i * 2 + 1]);
-        result[i] = (high << 4) | low;
-    }
+    try hexToBytesBuf(hex, result);
     return result;
 }
 
-fn hexDigitValue(c: u8) !u8 {
+/// Convert hexadecimal string to bytes (non-allocating, writes to buffer)
+/// Buffer must be at least hex.len / 2
+pub fn hexToBytesBuf(hex: []const u8, out: []u8) !void {
+    if (hex.len % 2 != 0) return error.InvalidHexLength;
+
+    for (0..out.len) |i| {
+        const high = try hexDigitValue(hex[i * 2]);
+        const low = try hexDigitValue(hex[i * 2 + 1]);
+        out[i] = (high << 4) | low;
+    }
+}
+
+/// Convert hex to bytes, returning a fixed-size array (comptime known size)
+pub fn hexToBytesArray(comptime N: usize, hex: *const [N * 2]u8) ![N]u8 {
+    var result: [N]u8 = undefined;
+    try hexToBytesBuf(hex, &result);
+    return result;
+}
+
+inline fn hexDigitValue(c: u8) !u8 {
     return switch (c) {
         '0'...'9' => c - '0',
         'a'...'f' => c - 'a' + 10,
@@ -880,4 +1039,96 @@ test "hex invalid length" {
 
 test "hex invalid char" {
     try std.testing.expectError(error.InvalidHexChar, hexToBytes(std.testing.allocator, "0g"));
+}
+
+// ============================================================================
+// Round 2 Optimization Tests
+// ============================================================================
+
+test "generic writeInt/readInt" {
+    var ser = Serializer.init(std.testing.allocator);
+    defer ser.deinit();
+
+    try ser.writeInt(u16, 0x1234);
+    try ser.writeInt(i32, -12345);
+    try ser.writeInt(u64, 0xDEADBEEF);
+
+    var des = Deserializer.init(ser.toSlice());
+    try std.testing.expectEqual(@as(u16, 0x1234), try des.readInt(u16));
+    try std.testing.expectEqual(@as(i32, -12345), try des.readInt(i32));
+    try std.testing.expectEqual(@as(u64, 0xDEADBEEF), try des.readInt(u64));
+    try des.checkEnd();
+}
+
+test "writeIntVector batch" {
+    var ser = Serializer.init(std.testing.allocator);
+    defer ser.deinit();
+
+    const values = [_]u16{ 100, 200, 300, 400 };
+    try ser.writeIntVector(u16, &values);
+
+    var des = Deserializer.init(ser.toSlice());
+    try std.testing.expectEqual(@as(u32, 4), try des.readVectorLen());
+    try std.testing.expectEqual(@as(u16, 100), try des.readU16());
+    try std.testing.expectEqual(@as(u16, 200), try des.readU16());
+    try std.testing.expectEqual(@as(u16, 300), try des.readU16());
+    try std.testing.expectEqual(@as(u16, 400), try des.readU16());
+}
+
+test "initCapacity pre-allocation" {
+    var ser = try Serializer.initCapacity(std.testing.allocator, 1024);
+    defer ser.deinit();
+
+    // Write some data - should not need to reallocate
+    try ser.writeString("hello world");
+    try ser.writeU64(12345);
+    try std.testing.expect(ser.size() < 1024);
+}
+
+test "bytesToHexBuf non-allocating" {
+    const bytes = [_]u8{ 0xde, 0xad, 0xbe, 0xef };
+    var hex: [8]u8 = undefined;
+    bytesToHexBuf(&bytes, &hex);
+    try std.testing.expectEqualStrings("deadbeef", &hex);
+}
+
+test "bytesToHexArray comptime" {
+    const bytes = [_]u8{ 0xca, 0xfe };
+    const hex = bytesToHexArray(2, &bytes);
+    try std.testing.expectEqualStrings("cafe", &hex);
+}
+
+test "hexToBytesArray comptime" {
+    const hex = "deadbeef";
+    const bytes = try hexToBytesArray(4, hex);
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 0xde, 0xad, 0xbe, 0xef }, &bytes);
+}
+
+test "deserializer peek and skip" {
+    var des = Deserializer.init(&[_]u8{ 0x01, 0x02, 0x03, 0x04 });
+
+    try std.testing.expectEqual(@as(u8, 0x01), try des.peek());
+    try std.testing.expectEqual(@as(u8, 0x01), try des.readU8()); // Still reads 0x01
+
+    try des.skip(2); // Skip 0x02, 0x03
+    try std.testing.expectEqual(@as(u8, 0x04), try des.readU8());
+}
+
+test "readIntVector allocating" {
+    var ser = Serializer.init(std.testing.allocator);
+    defer ser.deinit();
+
+    try ser.writeVectorLen(3);
+    try ser.writeU32(111);
+    try ser.writeU32(222);
+    try ser.writeU32(333);
+
+    var des = Deserializer.init(ser.toSlice());
+    var vec = try des.readIntVector(u32, std.testing.allocator);
+    defer vec.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 3), vec.items.len);
+    try std.testing.expectEqual(@as(u32, 111), vec.items[0]);
+    try std.testing.expectEqual(@as(u32, 222), vec.items[1]);
+    try std.testing.expectEqual(@as(u32, 333), vec.items[2]);
 }

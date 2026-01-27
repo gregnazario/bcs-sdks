@@ -1,0 +1,28 @@
+(lang dune 3.0)
+
+(name bcs)
+
+(version 0.1.0)
+
+(generate_opam_files true)
+
+(source
+ (github bcs-sdks/bcs-sdks))
+
+(authors "BCS SDK Contributors")
+
+(maintainers "bcs-sdk@example.com")
+
+(license Apache-2.0)
+
+(documentation https://github.com/bcs-sdks/bcs-sdks)
+
+(package
+ (name bcs)
+ (synopsis "Binary Canonical Serialization (BCS) for OCaml")
+ (description
+  "A pure OCaml implementation of Binary Canonical Serialization (BCS), a deterministic binary serialization format.")
+ (depends
+  (ocaml (>= 4.14))
+  (dune (>= 3.0))
+  (alcotest :with-test)))

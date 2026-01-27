@@ -1,0 +1,24 @@
+# Dune build
+_build/
+*.install
+
+# opam
+_opam/
+*.opam.locked
+
+# IDE
+.merlin
+.ocamlformat-ignore
+*.annot
+*.cmo
+*.cma
+*.cmi
+*.cmx
+*.cmxa
+*.cmxs
+*.o
+*.a
+
+# OS
+.DS_Store
+Thumbs.db

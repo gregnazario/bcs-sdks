@@ -1,4 +1,6 @@
 defmodule Bcs.Uleb128 do
+  import Bitwise
+
   @moduledoc """
   ULEB128 encoding and decoding for BCS.
 
@@ -8,6 +10,9 @@ defmodule Bcs.Uleb128 do
   """
 
   alias Bcs.Error
+
+  # Compile-time optimizations for hot path functions
+  @compile {:inline, encode: 1, decode: 1}
 
   # Maximum value that can be encoded (u32 max)
   @max_u32 0xFFFFFFFF
@@ -31,9 +36,22 @@ defmodule Bcs.Uleb128 do
 
   """
   @spec encode(non_neg_integer()) :: binary()
-  def encode(value) when is_integer(value) and value >= 0 and value <= @max_u32 do
-    do_encode(value, <<>>)
-  end
+  # Optimized paths for common small values (1-2 bytes covers most sequence lengths)
+  def encode(value) when value >= 0 and value < 0x80, do: <<value>>
+  def encode(value) when value < 0x4000, do: <<(value &&& 0x7F) ||| 0x80, value >>> 7>>
+
+  def encode(value) when value < 0x200000,
+    do: <<(value &&& 0x7F) ||| 0x80, ((value >>> 7) &&& 0x7F) ||| 0x80, value >>> 14>>
+
+  def encode(value) when value < 0x10000000,
+    do:
+      <<(value &&& 0x7F) ||| 0x80, ((value >>> 7) &&& 0x7F) ||| 0x80,
+        ((value >>> 14) &&& 0x7F) ||| 0x80, value >>> 21>>
+
+  def encode(value) when value <= @max_u32,
+    do:
+      <<(value &&& 0x7F) ||| 0x80, ((value >>> 7) &&& 0x7F) ||| 0x80,
+        ((value >>> 14) &&& 0x7F) ||| 0x80, ((value >>> 21) &&& 0x7F) ||| 0x80, value >>> 28>>
 
   def encode(value) when is_integer(value) and value < 0 do
     raise ArgumentError, "ULEB128 cannot encode negative values: #{value}"
@@ -41,15 +59,6 @@ defmodule Bcs.Uleb128 do
 
   def encode(value) when is_integer(value) do
     raise ArgumentError, "ULEB128 value exceeds u32 max: #{value}"
-  end
-
-  defp do_encode(value, acc) when value < 0x80 do
-    acc <> <<value>>
-  end
-
-  defp do_encode(value, acc) do
-    byte = Bitwise.band(value, 0x7F) |> Bitwise.bor(0x80)
-    do_encode(Bitwise.bsr(value, 7), acc <> <<byte>>)
   end
 
   @doc """
@@ -73,55 +82,57 @@ defmodule Bcs.Uleb128 do
 
   """
   @spec decode(binary()) :: {:ok, {non_neg_integer(), binary()}} | {:error, Error.t()}
-  def decode(data) when is_binary(data) do
-    do_decode(data, 0, 0, 0)
+  # Optimized fast paths for common 1-2 byte values
+  def decode(<<byte, rest::binary>>) when byte < 0x80 do
+    {:ok, {byte, rest}}
   end
 
-  # Successfully decoded - check for non-canonical encoding
-  defp do_decode(<<byte, rest::binary>>, value, shift, _count) when byte < 0x80 do
-    final_value = Bitwise.bor(value, Bitwise.bsl(byte, shift))
-
-    cond do
-      # Non-canonical: trailing zero byte (except for value 0 at position 0)
-      shift > 0 and byte == 0 ->
-        {:error, Error.non_canonical_uleb128()}
-
-      # Overflow check
-      final_value > @max_u32 ->
-        {:error, Error.uleb128_overflow()}
-
-      true ->
-        {:ok, {final_value, rest}}
-    end
+  def decode(<<b0, b1, rest::binary>>) when b0 >= 0x80 and b1 < 0x80 do
+    if b1 == 0, do: {:error, Error.non_canonical_uleb128()}, else: {:ok, {(b0 &&& 0x7F) ||| (b1 <<< 7), rest}}
   end
 
-  # Continue decoding
-  defp do_decode(<<byte, rest::binary>>, value, shift, count) when count < 4 do
-    digit = Bitwise.band(byte, 0x7F)
-    new_value = Bitwise.bor(value, Bitwise.bsl(digit, shift))
-    do_decode(rest, new_value, shift + 7, count + 1)
+  def decode(<<b0, b1, b2, rest::binary>>) when b0 >= 0x80 and b1 >= 0x80 and b2 < 0x80 do
+    if b2 == 0,
+      do: {:error, Error.non_canonical_uleb128()},
+      else: {:ok, {(b0 &&& 0x7F) ||| ((b1 &&& 0x7F) <<< 7) ||| (b2 <<< 14), rest}}
   end
 
-  # 5th byte - must be final and small enough
-  defp do_decode(<<byte, rest::binary>>, value, shift, 4) when byte < 0x10 do
-    final_value = Bitwise.bor(value, Bitwise.bsl(byte, shift))
+  def decode(<<b0, b1, b2, b3, rest::binary>>)
+      when b0 >= 0x80 and b1 >= 0x80 and b2 >= 0x80 and b3 < 0x80 do
+    if b3 == 0,
+      do: {:error, Error.non_canonical_uleb128()},
+      else:
+        {:ok,
+         {(b0 &&& 0x7F) ||| ((b1 &&& 0x7F) <<< 7) ||| ((b2 &&& 0x7F) <<< 14) ||| (b3 <<< 21),
+          rest}}
+  end
 
-    if final_value > @max_u32 do
-      {:error, Error.uleb128_overflow()}
-    else
-      {:ok, {final_value, rest}}
-    end
+  def decode(<<b0, b1, b2, b3, b4, rest::binary>>)
+      when b0 >= 0x80 and b1 >= 0x80 and b2 >= 0x80 and b3 >= 0x80 and b4 < 0x10 do
+    value =
+      (b0 &&& 0x7F) ||| ((b1 &&& 0x7F) <<< 7) ||| ((b2 &&& 0x7F) <<< 14) |||
+        ((b3 &&& 0x7F) <<< 21) ||| (b4 <<< 28)
+
+    if value > @max_u32, do: {:error, Error.uleb128_overflow()}, else: {:ok, {value, rest}}
   end
 
   # 5th byte with continuation bit or too large
-  defp do_decode(<<_byte, _rest::binary>>, _value, _shift, 4) do
+  def decode(<<b0, b1, b2, b3, _b4, _rest::binary>>)
+      when b0 >= 0x80 and b1 >= 0x80 and b2 >= 0x80 and b3 >= 0x80 do
     {:error, Error.uleb128_overflow()}
   end
 
-  # Unexpected EOF
-  defp do_decode(<<>>, _value, _shift, _count) do
-    {:error, Error.unexpected_eof()}
-  end
+  # Unexpected EOF cases
+  def decode(<<b0>>) when b0 >= 0x80, do: {:error, Error.unexpected_eof()}
+  def decode(<<b0, b1>>) when b0 >= 0x80 and b1 >= 0x80, do: {:error, Error.unexpected_eof()}
+
+  def decode(<<b0, b1, b2>>) when b0 >= 0x80 and b1 >= 0x80 and b2 >= 0x80,
+    do: {:error, Error.unexpected_eof()}
+
+  def decode(<<b0, b1, b2, b3>>) when b0 >= 0x80 and b1 >= 0x80 and b2 >= 0x80 and b3 >= 0x80,
+    do: {:error, Error.unexpected_eof()}
+
+  def decode(<<>>), do: {:error, Error.unexpected_eof()}
 
   @doc """
   Decode a ULEB128 value, raising on error.

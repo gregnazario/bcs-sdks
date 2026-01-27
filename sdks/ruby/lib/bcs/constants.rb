@@ -7,13 +7,13 @@ module BCS
   # Maximum container depth for nested structures
   MAX_CONTAINER_DEPTH = 500
 
-  # Integer bounds
+  # Integer bounds (all frozen for thread safety)
   U8_MAX  = 0xFF
   U16_MAX = 0xFFFF
   U32_MAX = 0xFFFFFFFF
   U64_MAX = 0xFFFFFFFFFFFFFFFF
-  U128_MAX = (1 << 128) - 1
-  U256_MAX = (1 << 256) - 1
+  U128_MAX = ((1 << 128) - 1).freeze
+  U256_MAX = ((1 << 256) - 1).freeze
 
   I8_MIN  = -128
   I8_MAX  = 127
@@ -23,8 +23,16 @@ module BCS
   I32_MAX = 2_147_483_647
   I64_MIN = -9_223_372_036_854_775_808
   I64_MAX = 9_223_372_036_854_775_807
-  I128_MIN = -(1 << 127)
-  I128_MAX = (1 << 127) - 1
-  I256_MIN = -(1 << 255)
-  I256_MAX = (1 << 255) - 1
+  I128_MIN = (-(1 << 127)).freeze
+  I128_MAX = ((1 << 127) - 1).freeze
+  I256_MIN = (-(1 << 255)).freeze
+  I256_MAX = ((1 << 255) - 1).freeze
+
+  # Pre-computed modulus values for signed integer operations
+  MODULUS_128 = (1 << 128).freeze
+  MODULUS_256 = (1 << 256).freeze
+
+  # Pre-allocated byte strings for common values
+  BYTE_FALSE = "\x00".b.freeze
+  BYTE_TRUE = "\x01".b.freeze
 end

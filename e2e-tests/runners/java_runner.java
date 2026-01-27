@@ -7,6 +7,7 @@
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.Arrays;
 
 public class java_runner {
     
@@ -560,23 +561,262 @@ public class java_runner {
         return sb.toString();
     }
     
+    // Benchmark support
+    static double[] computeStats(long[] times) {
+        if (times.length == 0) return new double[]{0, 0, 0, 0, 0};
+        long[] sorted = times.clone();
+        java.util.Arrays.sort(sorted);
+        int n = sorted.length;
+        long sum = 0;
+        for (long t : times) sum += t;
+        return new double[]{
+            (double)sum / n,
+            sorted[0],
+            sorted[n-1],
+            sorted[n/2],
+            sorted[(int)(n * 0.95)]
+        };
+    }
+    
+    @SuppressWarnings("unchecked")
+    static Object generateValue(Map<String, Object> bc) {
+        if (bc.containsKey("value") && bc.get("value") != null) return bc.get("value");
+        int length = bc.containsKey("length") ? ((Number)bc.get("length")).intValue() : 10;
+        String gen = (String)bc.get("value_generator");
+        if ("repeat_char".equals(gen)) {
+            String c = bc.containsKey("char") ? (String)bc.get("char") : "a";
+            return repeat(c, length);
+        } else if ("sequential_bytes".equals(gen) || "sequential_u8".equals(gen)) {
+            List<Number> result = new ArrayList<>();
+            for (int i = 0; i < length; i++) result.add(i % 256);
+            return result;
+        } else if ("sequential_u64".equals(gen)) {
+            List<String> result = new ArrayList<>();
+            for (int i = 0; i < length; i++) result.add(String.valueOf(i));
+            return result;
+        } else if ("address_bytes".equals(gen)) {
+            List<Number> result = new ArrayList<>();
+            for (int i = 0; i < 31; i++) result.add(0);
+            result.add(1);
+            return result;
+        }
+        return bc.get("value");
+    }
+    
+    @SuppressWarnings("unchecked")
+    static void serializeValue(BcsSerializer s, String type, Object value) {
+        switch (type) {
+            case "bool": s.writeBool((Boolean)value); break;
+            case "u8": s.writeU8(((Number)value).intValue()); break;
+            case "u16": s.writeU16(((Number)value).intValue()); break;
+            case "u32": s.writeU32(((Number)value).longValue()); break;
+            case "u64":
+                long v64 = value instanceof String ? Long.parseUnsignedLong((String)value) : ((Number)value).longValue();
+                s.writeU64(v64);
+                break;
+            case "u128":
+                String s128 = value instanceof String ? (String)value : String.valueOf(((Number)value).longValue());
+                s.writeU128(new java.math.BigInteger(s128).toByteArray());
+                break;
+            case "i8": s.writeI8(((Number)value).intValue()); break;
+            case "i16": s.writeI16(((Number)value).intValue()); break;
+            case "i32": s.writeI32(((Number)value).intValue()); break;
+            case "i64":
+                long i64 = value instanceof String ? Long.parseLong((String)value) : ((Number)value).longValue();
+                s.writeI64(i64);
+                break;
+            case "i128":
+                String si128 = value instanceof String ? (String)value : String.valueOf(((Number)value).longValue());
+                s.writeI128(new java.math.BigInteger(si128).toByteArray());
+                break;
+            case "string": s.writeString((String)value); break;
+            case "bytes":
+                List<Number> bytes = (List<Number>)value;
+                s.writeUleb128(bytes.size());
+                for (Number b : bytes) s.writeU8(b.intValue());
+                break;
+            case "fixed_bytes":
+                List<Number> fb = (List<Number>)value;
+                for (Number b : fb) s.writeU8(b.intValue());
+                break;
+            case "vector<u8>":
+                List<Number> vu8 = (List<Number>)value;
+                s.writeUleb128(vu8.size());
+                for (Number n : vu8) s.writeU8(n.intValue());
+                break;
+            case "vector<u64>":
+                List<?> vu64 = (List<?>)value;
+                s.writeUleb128(vu64.size());
+                for (Object o : vu64) {
+                    long val = o instanceof String ? Long.parseUnsignedLong((String)o) : ((Number)o).longValue();
+                    s.writeU64(val);
+                }
+                break;
+            case "vector<string>":
+                List<String> vs = (List<String>)value;
+                s.writeUleb128(vs.size());
+                for (String str : vs) s.writeString(str);
+                break;
+        }
+    }
+    
+    static void deserializeValue(BcsDeserializer d, String type) {
+        switch (type) {
+            case "bool": d.readBool(); break;
+            case "u8": d.readU8(); break;
+            case "u16": d.readU16(); break;
+            case "u32": d.readU32(); break;
+            case "u64": d.readU64(); break;
+            case "u128": d.readU128(); break;
+            case "i8": d.readI8(); break;
+            case "i16": d.readI16(); break;
+            case "i32": d.readI32(); break;
+            case "i64": d.readI64(); break;
+            case "i128": d.readI128(); break;
+            case "string": d.readString(); break;
+            case "bytes": case "vector<u8>":
+                int len = d.readUleb128();
+                for (int i = 0; i < len; i++) d.readU8();
+                break;
+            case "fixed_bytes":
+                for (int i = 0; i < 32; i++) d.readU8();
+                break;
+            case "vector<u64>":
+                int len64 = d.readUleb128();
+                for (int i = 0; i < len64; i++) d.readU64();
+                break;
+            case "vector<string>":
+                int lens = d.readUleb128();
+                for (int i = 0; i < lens; i++) d.readString();
+                break;
+        }
+    }
+    
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> runBenchmarks(Map<String, Object> spec) {
+        int defaultIterations = 1000;
+        int warmup = 10;
+        Map<String, Object> config = (Map<String, Object>)spec.get("config");
+        if (config != null) {
+            if (config.containsKey("default_iterations")) defaultIterations = ((Number)config.get("default_iterations")).intValue();
+            if (config.containsKey("warmup_iterations")) warmup = ((Number)config.get("warmup_iterations")).intValue();
+        }
+        
+        List<Map<String, Object>> results = new ArrayList<>();
+        Map<String, Object> scenarios = (Map<String, Object>)spec.getOrDefault("scenarios", new LinkedHashMap<>());
+        
+        for (Object groupObj : scenarios.values()) {
+            Map<String, Object> group = (Map<String, Object>)groupObj;
+            List<Map<String, Object>> benchmarks = (List<Map<String, Object>>)group.getOrDefault("benchmarks", new ArrayList<>());
+            
+            for (Map<String, Object> bc : benchmarks) {
+                String name = (String)bc.get("name");
+                String type = (String)bc.get("type");
+                int iterations = bc.containsKey("iterations") ? ((Number)bc.get("iterations")).intValue() : defaultIterations;
+                
+                try {
+                    Object value = generateValue(bc);
+                    
+                    // Serialize to get bytes
+                    BcsSerializer ser = new BcsSerializer();
+                    serializeValue(ser, type, value);
+                    byte[] bcsBytes = ser.toBytes();
+                    
+                    // Warmup serialize
+                    for (int i = 0; i < warmup; i++) {
+                        BcsSerializer ws = new BcsSerializer();
+                        serializeValue(ws, type, value);
+                        ws.toBytes();
+                    }
+                    
+                    // Benchmark serialize
+                    long[] serTimes = new long[iterations];
+                    for (int i = 0; i < iterations; i++) {
+                        long start = System.nanoTime();
+                        BcsSerializer bs = new BcsSerializer();
+                        serializeValue(bs, type, value);
+                        bs.toBytes();
+                        serTimes[i] = System.nanoTime() - start;
+                    }
+                    
+                    // Warmup deserialize
+                    for (int i = 0; i < warmup; i++) {
+                        BcsDeserializer wd = new BcsDeserializer(bcsBytes);
+                        deserializeValue(wd, type);
+                    }
+                    
+                    // Benchmark deserialize
+                    long[] deTimes = new long[iterations];
+                    for (int i = 0; i < iterations; i++) {
+                        long start = System.nanoTime();
+                        BcsDeserializer bd = new BcsDeserializer(bcsBytes);
+                        deserializeValue(bd, type);
+                        deTimes[i] = System.nanoTime() - start;
+                    }
+                    
+                    double[] serStats = computeStats(serTimes);
+                    double[] deStats = computeStats(deTimes);
+                    
+                    Map<String, Object> result = new LinkedHashMap<>();
+                    result.put("name", name);
+                    result.put("type", type);
+                    result.put("iterations", iterations);
+                    result.put("serialize_avg_ns", serStats[0]);
+                    result.put("serialize_min_ns", serStats[1]);
+                    result.put("serialize_max_ns", serStats[2]);
+                    result.put("serialize_p50_ns", serStats[3]);
+                    result.put("serialize_p95_ns", serStats[4]);
+                    result.put("deserialize_avg_ns", deStats[0]);
+                    result.put("deserialize_min_ns", deStats[1]);
+                    result.put("deserialize_max_ns", deStats[2]);
+                    result.put("deserialize_p50_ns", deStats[3]);
+                    result.put("deserialize_p95_ns", deStats[4]);
+                    result.put("throughput_serialize_ops_sec", serStats[0] > 0 ? 1e9 / serStats[0] : 0);
+                    result.put("throughput_deserialize_ops_sec", deStats[0] > 0 ? 1e9 / deStats[0] : 0);
+                    results.add(result);
+                } catch (Exception e) {
+                    Map<String, Object> result = new LinkedHashMap<>();
+                    result.put("name", name);
+                    result.put("type", type);
+                    result.put("iterations", iterations);
+                    result.put("error", e.getMessage());
+                    results.add(result);
+                }
+            }
+        }
+        
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put("version", spec.getOrDefault("version", "1.0.0"));
+        output.put("description", "Java benchmark results");
+        output.put("benchmarks", results);
+        return output;
+    }
+    
     @SuppressWarnings("unchecked")
     public static void main(String[] args) throws Exception {
+        boolean benchmarkMode = Arrays.asList(args).contains("--benchmark");
+        
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
         StringBuilder sb = new StringBuilder();
         String line;
         while ((line = reader.readLine()) != null) sb.append(line).append("\n");
         String input = sb.toString();
         
-        Map<String, Object> vectors = (Map<String, Object>)parseJson(input);
+        Map<String, Object> data = (Map<String, Object>)parseJson(input);
+        
+        if (benchmarkMode) {
+            Map<String, Object> output = runBenchmarks(data);
+            System.out.println(toJson(output, 0));
+            return;
+        }
         
         Map<String, Object> output = new LinkedHashMap<>();
-        output.put("version", vectors.getOrDefault("version", "1.0.0"));
+        output.put("version", data.getOrDefault("version", "1.0.0"));
         output.put("description", "Java roundtrip results");
         
         String[] categories = {"primitives", "strings", "bytes", "options", "vectors", "structs", "complex"};
         for (String category : categories) {
-            List<Map<String, Object>> list = (List<Map<String, Object>>)vectors.getOrDefault(category, new ArrayList<>());
+            List<Map<String, Object>> list = (List<Map<String, Object>>)data.getOrDefault(category, new ArrayList<>());
             List<Map<String, Object>> results = new ArrayList<>();
             for (Map<String, Object> tc : list) {
                 results.add(processTestCase(tc));

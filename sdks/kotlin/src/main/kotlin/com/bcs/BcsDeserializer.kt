@@ -3,15 +3,25 @@
  */
 package com.bcs
 
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 
 /**
  * BCS Deserializer for manual deserialization
+ * 
+ * Optimized for performance with:
+ * - Direct array access for integer reads
+ * - Fast path for common ULEB128 values
+ * - Minimal object allocations
  */
 class BcsDeserializer(private val data: ByteArray) {
     var offset: Int = 0
         private set
     private var depth = 0
+    
+    /** Data length cached for faster access */
+    private val dataLen = data.size
 
     // =========================================================================
     // Boolean
@@ -27,16 +37,16 @@ class BcsDeserializer(private val data: ByteArray) {
     }
 
     // =========================================================================
-    // Unsigned Integers
+    // Unsigned Integers (optimized with direct array access)
     // =========================================================================
 
     fun readU8(): Int {
-        checkRemaining(1)
+        if (offset >= dataLen) throw BcsError.unexpectedEof()
         return data[offset++].toInt() and 0xFF
     }
 
     fun readU16(): Int {
-        checkRemaining(2)
+        if (offset + 2 > dataLen) throw BcsError.unexpectedEof()
         val result = (data[offset].toInt() and 0xFF) or
                 ((data[offset + 1].toInt() and 0xFF) shl 8)
         offset += 2
@@ -44,21 +54,27 @@ class BcsDeserializer(private val data: ByteArray) {
     }
 
     fun readU32(): Long {
-        checkRemaining(4)
-        var result = 0L
-        for (i in 0 until 4) {
-            result = result or ((data[offset + i].toLong() and 0xFF) shl (i * 8))
-        }
+        if (offset + 4 > dataLen) throw BcsError.unexpectedEof()
+        // Unrolled loop for better performance
+        val result = (data[offset].toLong() and 0xFF) or
+                ((data[offset + 1].toLong() and 0xFF) shl 8) or
+                ((data[offset + 2].toLong() and 0xFF) shl 16) or
+                ((data[offset + 3].toLong() and 0xFF) shl 24)
         offset += 4
         return result
     }
 
     fun readU64(): Long {
-        checkRemaining(8)
-        var result = 0L
-        for (i in 0 until 8) {
-            result = result or ((data[offset + i].toLong() and 0xFF) shl (i * 8))
-        }
+        if (offset + 8 > dataLen) throw BcsError.unexpectedEof()
+        // Unrolled loop for better performance
+        val result = (data[offset].toLong() and 0xFF) or
+                ((data[offset + 1].toLong() and 0xFF) shl 8) or
+                ((data[offset + 2].toLong() and 0xFF) shl 16) or
+                ((data[offset + 3].toLong() and 0xFF) shl 24) or
+                ((data[offset + 4].toLong() and 0xFF) shl 32) or
+                ((data[offset + 5].toLong() and 0xFF) shl 40) or
+                ((data[offset + 6].toLong() and 0xFF) shl 48) or
+                ((data[offset + 7].toLong() and 0xFF) shl 56)
         offset += 8
         return result
     }
@@ -77,18 +93,23 @@ class BcsDeserializer(private val data: ByteArray) {
         return if (value >= 0x8000) value - 0x10000 else value
     }
 
-    fun readI32(): Int {
-        val value = readU32()
-        return value.toInt()
-    }
+    fun readI32(): Int = readU32().toInt()
 
     fun readI64(): Long = readU64()
 
     // =========================================================================
-    // ULEB128
+    // ULEB128 (with fast path for single-byte values)
     // =========================================================================
 
     fun readUleb128(): Long {
+        // Fast path for single-byte values (0-127)
+        if (offset >= dataLen) throw BcsError.unexpectedEof()
+        val first = data[offset].toInt() and 0xFF
+        if (first < 0x80) {
+            offset++
+            return first.toLong()
+        }
+        // Multi-byte decoding
         val (value, bytesRead) = Uleb128.decode(data, offset)
         offset += bytesRead
         return value
@@ -99,7 +120,7 @@ class BcsDeserializer(private val data: ByteArray) {
     // =========================================================================
 
     fun readFixedBytes(length: Int): ByteArray {
-        checkRemaining(length)
+        if (offset + length > dataLen) throw BcsError.unexpectedEof()
         val result = data.copyOfRange(offset, offset + length)
         offset += length
         return result
@@ -124,6 +145,83 @@ class BcsDeserializer(private val data: ByteArray) {
             if (e is BcsError) throw e
             throw BcsError.invalidUtf8(e.message)
         }
+    }
+    
+    // =========================================================================
+    // Batch Operations (optimized for vectors of primitives)
+    // =========================================================================
+    
+    /**
+     * Read a vector of u8 values efficiently
+     */
+    fun readU8Vector(): ByteArray {
+        val length = readUleb128().toInt()
+        checkSequenceLength(length)
+        return readFixedBytes(length)
+    }
+    
+    /**
+     * Read a vector of u16 values efficiently
+     */
+    fun readU16Vector(): ShortArray {
+        val length = readUleb128().toInt()
+        checkSequenceLength(length)
+        val byteLen = length * 2
+        if (offset + byteLen > dataLen) throw BcsError.unexpectedEof()
+        
+        val result = ShortArray(length)
+        val buf = ByteBuffer.wrap(data, offset, byteLen).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until length) result[i] = buf.short
+        offset += byteLen
+        return result
+    }
+    
+    /**
+     * Read a vector of u32 values efficiently
+     */
+    fun readU32Vector(): IntArray {
+        val length = readUleb128().toInt()
+        checkSequenceLength(length)
+        val byteLen = length * 4
+        if (offset + byteLen > dataLen) throw BcsError.unexpectedEof()
+        
+        val result = IntArray(length)
+        val buf = ByteBuffer.wrap(data, offset, byteLen).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until length) result[i] = buf.int
+        offset += byteLen
+        return result
+    }
+    
+    /**
+     * Read a vector of u64 values efficiently
+     */
+    fun readU64Vector(): LongArray {
+        val length = readUleb128().toInt()
+        checkSequenceLength(length)
+        val byteLen = length * 8
+        if (offset + byteLen > dataLen) throw BcsError.unexpectedEof()
+        
+        val result = LongArray(length)
+        val buf = ByteBuffer.wrap(data, offset, byteLen).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until length) result[i] = buf.long
+        offset += byteLen
+        return result
+    }
+    
+    /**
+     * Peek at next byte without consuming it
+     */
+    fun peek(): Int {
+        if (offset >= dataLen) throw BcsError.unexpectedEof()
+        return data[offset].toInt() and 0xFF
+    }
+    
+    /**
+     * Skip n bytes
+     */
+    fun skip(n: Int) {
+        if (offset + n > dataLen) throw BcsError.unexpectedEof()
+        offset += n
     }
 
     // =========================================================================

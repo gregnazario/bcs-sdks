@@ -18,7 +18,17 @@ defmodule Bcs.Serializer do
 
   """
 
-  alias Bcs.{Error, Uleb128}
+  alias Bcs.Error
+
+  # Compile-time optimizations
+  @compile {:inline,
+            write_bool: 2,
+            write_u8: 2,
+            write_u16: 2,
+            write_u32: 2,
+            write_u64: 2,
+            encode_uleb128: 1,
+            append: 2}
 
   # Constants
   @max_sequence_length (1 <<< 31) - 1
@@ -44,10 +54,11 @@ defmodule Bcs.Serializer do
   @i256_min -(1 <<< 255)
   @i256_max (1 <<< 255) - 1
 
-  defstruct data: <<>>, depth: 0, max_depth: @max_container_depth
+  # Using iodata for efficient accumulation, converted to binary on to_bytes/1
+  defstruct data: [], depth: 0, max_depth: @max_container_depth
 
   @type t :: %__MODULE__{
-          data: binary(),
+          data: iodata(),
           depth: non_neg_integer(),
           max_depth: non_neg_integer()
         }
@@ -235,10 +246,36 @@ defmodule Bcs.Serializer do
   @doc """
   Serialize a ULEB128-encoded unsigned integer.
   """
-  @spec write_uleb128(binary(), non_neg_integer()) :: binary()
-  def write_uleb128(data, value) do
-    append(data, Uleb128.encode(value))
+  @spec write_uleb128(data_t(), non_neg_integer()) :: data_t()
+  def write_uleb128(data, value) when value >= 0 and value <= @u32_max do
+    append(data, encode_uleb128(value))
   end
+
+  def write_uleb128(_data, value) when value < 0 do
+    raise ArgumentError, "ULEB128 cannot encode negative values: #{value}"
+  end
+
+  def write_uleb128(_data, value) do
+    raise ArgumentError, "ULEB128 value exceeds u32 max: #{value}"
+  end
+
+  # Inline ULEB128 encoding for performance - optimized for common small values
+  @spec encode_uleb128(non_neg_integer()) :: binary()
+  defp encode_uleb128(value) when value < 0x80, do: <<value>>
+  defp encode_uleb128(value) when value < 0x4000, do: <<(value &&& 0x7F) ||| 0x80, value >>> 7>>
+
+  defp encode_uleb128(value) when value < 0x200000,
+    do: <<(value &&& 0x7F) ||| 0x80, ((value >>> 7) &&& 0x7F) ||| 0x80, value >>> 14>>
+
+  defp encode_uleb128(value) when value < 0x10000000,
+    do:
+      <<(value &&& 0x7F) ||| 0x80, ((value >>> 7) &&& 0x7F) ||| 0x80,
+        ((value >>> 14) &&& 0x7F) ||| 0x80, value >>> 21>>
+
+  defp encode_uleb128(value),
+    do:
+      <<(value &&& 0x7F) ||| 0x80, ((value >>> 7) &&& 0x7F) ||| 0x80,
+        ((value >>> 14) &&& 0x7F) ||| 0x80, ((value >>> 21) &&& 0x7F) ||| 0x80, value >>> 28>>
 
   # ==========================================================================
   # BYTES AND STRINGS
@@ -327,7 +364,7 @@ defmodule Bcs.Serializer do
       <<3, 1, 2, 3>>
 
   """
-  @spec write_vector(binary(), list(), (binary(), any() -> binary())) :: binary()
+  @spec write_vector(data_t(), list(), (data_t(), any() -> data_t())) :: data_t()
   def write_vector(data, values, serializer) when is_list(values) do
     len = length(values)
 
@@ -338,6 +375,43 @@ defmodule Bcs.Serializer do
     data
     |> write_uleb128(len)
     |> then(fn d -> Enum.reduce(values, d, fn value, acc -> serializer.(acc, value) end) end)
+  end
+
+  @doc """
+  Serialize a vector of u8 values (optimized).
+
+  ## Examples
+
+      iex> Bcs.Serializer.write_vector_u8(<<>>, [1, 2, 3])
+      <<3, 1, 2, 3>>
+
+  """
+  @spec write_vector_u8(data_t(), list(non_neg_integer()) | binary()) :: data_t()
+  def write_vector_u8(data, values) when is_binary(values) do
+    len = byte_size(values)
+
+    if len > @max_sequence_length do
+      raise Error.exceeded_max_length(len)
+    end
+
+    data
+    |> write_uleb128(len)
+    |> append(values)
+  end
+
+  def write_vector_u8(data, values) when is_list(values) do
+    len = length(values)
+
+    if len > @max_sequence_length do
+      raise Error.exceeded_max_length(len)
+    end
+
+    # Convert list of integers to binary directly
+    bytes = :erlang.list_to_binary(values)
+
+    data
+    |> write_uleb128(len)
+    |> append(bytes)
   end
 
   # ==========================================================================
@@ -403,8 +477,8 @@ defmodule Bcs.Serializer do
       <<2, 1, 10, 2, 20>>
 
   """
-  @spec write_map(binary(), map(), (binary(), any() -> binary()), (binary(), any() -> binary())) ::
-          binary()
+  @spec write_map(data_t(), map(), (data_t(), any() -> data_t()), (data_t(), any() -> data_t())) ::
+          data_t()
   def write_map(data, items, key_serializer, value_serializer) when is_map(items) do
     len = map_size(items)
 
@@ -416,17 +490,17 @@ defmodule Bcs.Serializer do
     key_bytes_pairs =
       items
       |> Enum.map(fn {key, value} ->
-        key_state = key_serializer.(new(), key)
-        key_bytes = to_bytes(key_state)
-        {key_bytes, key, value}
+        # Use binary mode for key serialization to get bytes for sorting
+        key_bytes = key_serializer.(<<>>, key)
+        {key_bytes, value}
       end)
-      |> Enum.sort_by(fn {key_bytes, _key, _value} -> key_bytes end)
+      |> Enum.sort_by(fn {key_bytes, _value} -> key_bytes end)
 
     # Write length and sorted entries
     data
     |> write_uleb128(len)
     |> then(fn d ->
-      Enum.reduce(key_bytes_pairs, d, fn {key_bytes, _key, value}, acc ->
+      Enum.reduce(key_bytes_pairs, d, fn {key_bytes, value}, acc ->
         acc
         |> append(key_bytes)
         |> value_serializer.(value)
@@ -448,11 +522,12 @@ defmodule Bcs.Serializer do
   Get the serialized bytes.
   """
   @spec to_bytes(data_t()) :: binary()
-  def to_bytes(%__MODULE__{data: data}), do: data
+  def to_bytes(%__MODULE__{data: data}), do: IO.iodata_to_binary(data)
   def to_bytes(data) when is_binary(data), do: data
 
-  defp append(%__MODULE__{data: data} = state, bytes) when is_binary(bytes) do
-    %{state | data: data <> bytes}
+  # Optimized append using IO lists for struct, binary concat for raw binary
+  defp append(%__MODULE__{data: data} = state, bytes) do
+    %{state | data: [data | bytes]}
   end
 
   defp append(data, bytes) when is_binary(data) and is_binary(bytes) do

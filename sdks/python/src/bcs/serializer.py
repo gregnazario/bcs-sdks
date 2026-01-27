@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import struct
 from typing import Any, Callable, Sequence, TypeVar
 
-from . import uleb128
 from .errors import ExceededContainerDepth, ExceededMaxLength
 from .types import (
     I8_MAX,
@@ -31,6 +31,14 @@ from .types import (
 
 T = TypeVar("T")
 
+# Pre-compiled struct formats for performance
+_STRUCT_U16 = struct.Struct("<H")
+_STRUCT_U32 = struct.Struct("<I")
+_STRUCT_U64 = struct.Struct("<Q")
+_STRUCT_I16 = struct.Struct("<h")
+_STRUCT_I32 = struct.Struct("<i")
+_STRUCT_I64 = struct.Struct("<q")
+
 
 class BcsSerializer:
     """Manual BCS serialization API.
@@ -45,6 +53,8 @@ class BcsSerializer:
         >>> s.write_string("hello")
         >>> data = s.to_bytes()
     """
+
+    __slots__ = ("_buffer", "_max_depth", "_current_depth")
 
     def __init__(self, max_depth: int = MAX_CONTAINER_DEPTH) -> None:
         """Initialize a new serializer.
@@ -63,10 +73,6 @@ class BcsSerializer:
             The accumulated serialized data
         """
         return bytes(self._buffer)
-
-    def _write_bytes(self, data: bytes | bytearray) -> None:
-        """Write raw bytes to the buffer."""
-        self._buffer.extend(data)
 
     def _check_depth(self, container: str = "") -> None:
         """Check and increment container depth."""
@@ -92,7 +98,7 @@ class BcsSerializer:
         Returns:
             self for chaining
         """
-        self._buffer.append(0x01 if value else 0x00)
+        self._buffer.append(1 if value else 0)
         return self
 
     # =========================================================================
@@ -130,7 +136,7 @@ class BcsSerializer:
         """
         if not 0 <= value <= U16_MAX:
             raise ValueError(f"u16 value out of range: {value}")
-        self._write_bytes(value.to_bytes(2, "little"))
+        self._buffer += _STRUCT_U16.pack(value)
         return self
 
     def write_u32(self, value: int) -> "BcsSerializer":
@@ -147,7 +153,7 @@ class BcsSerializer:
         """
         if not 0 <= value <= U32_MAX:
             raise ValueError(f"u32 value out of range: {value}")
-        self._write_bytes(value.to_bytes(4, "little"))
+        self._buffer += _STRUCT_U32.pack(value)
         return self
 
     def write_u64(self, value: int) -> "BcsSerializer":
@@ -164,7 +170,7 @@ class BcsSerializer:
         """
         if not 0 <= value <= U64_MAX:
             raise ValueError(f"u64 value out of range: {value}")
-        self._write_bytes(value.to_bytes(8, "little"))
+        self._buffer += _STRUCT_U64.pack(value)
         return self
 
     def write_u128(self, value: int) -> "BcsSerializer":
@@ -181,7 +187,7 @@ class BcsSerializer:
         """
         if not 0 <= value <= U128_MAX:
             raise ValueError(f"u128 value out of range: {value}")
-        self._write_bytes(value.to_bytes(16, "little"))
+        self._buffer += value.to_bytes(16, "little")
         return self
 
     def write_u256(self, value: int) -> "BcsSerializer":
@@ -198,7 +204,7 @@ class BcsSerializer:
         """
         if not 0 <= value <= U256_MAX:
             raise ValueError(f"u256 value out of range: {value}")
-        self._write_bytes(value.to_bytes(32, "little"))
+        self._buffer += value.to_bytes(32, "little")
         return self
 
     # =========================================================================
@@ -236,7 +242,7 @@ class BcsSerializer:
         """
         if not I16_MIN <= value <= I16_MAX:
             raise ValueError(f"i16 value out of range: {value}")
-        self._write_bytes(value.to_bytes(2, "little", signed=True))
+        self._buffer += _STRUCT_I16.pack(value)
         return self
 
     def write_i32(self, value: int) -> "BcsSerializer":
@@ -253,7 +259,7 @@ class BcsSerializer:
         """
         if not I32_MIN <= value <= I32_MAX:
             raise ValueError(f"i32 value out of range: {value}")
-        self._write_bytes(value.to_bytes(4, "little", signed=True))
+        self._buffer += _STRUCT_I32.pack(value)
         return self
 
     def write_i64(self, value: int) -> "BcsSerializer":
@@ -270,7 +276,7 @@ class BcsSerializer:
         """
         if not I64_MIN <= value <= I64_MAX:
             raise ValueError(f"i64 value out of range: {value}")
-        self._write_bytes(value.to_bytes(8, "little", signed=True))
+        self._buffer += _STRUCT_I64.pack(value)
         return self
 
     def write_i128(self, value: int) -> "BcsSerializer":
@@ -287,7 +293,7 @@ class BcsSerializer:
         """
         if not I128_MIN <= value <= I128_MAX:
             raise ValueError(f"i128 value out of range: {value}")
-        self._write_bytes(value.to_bytes(16, "little", signed=True))
+        self._buffer += value.to_bytes(16, "little", signed=True)
         return self
 
     def write_i256(self, value: int) -> "BcsSerializer":
@@ -304,7 +310,7 @@ class BcsSerializer:
         """
         if not I256_MIN <= value <= I256_MAX:
             raise ValueError(f"i256 value out of range: {value}")
-        self._write_bytes(value.to_bytes(32, "little", signed=True))
+        self._buffer += value.to_bytes(32, "little", signed=True)
         return self
 
     # =========================================================================
@@ -320,7 +326,17 @@ class BcsSerializer:
         Returns:
             self for chaining
         """
-        self._write_bytes(uleb128.encode(value))
+        # Inline ULEB128 encoding for performance
+        if value < 0:
+            raise ValueError(f"ULEB128 cannot encode negative values: {value}")
+        if value > 0xFFFFFFFF:
+            raise ValueError(f"ULEB128 value exceeds u32 max: {value}")
+
+        buf = self._buffer
+        while value >= 0x80:
+            buf.append((value & 0x7F) | 0x80)
+            value >>= 7
+        buf.append(value)
         return self
 
     # =========================================================================
@@ -339,10 +355,11 @@ class BcsSerializer:
         Raises:
             ExceededMaxLength: If length exceeds MAX_SEQUENCE_LENGTH
         """
-        if len(value) > MAX_SEQUENCE_LENGTH:
-            raise ExceededMaxLength(len(value))
-        self.write_uleb128(len(value))
-        self._write_bytes(value)
+        length = len(value)
+        if length > MAX_SEQUENCE_LENGTH:
+            raise ExceededMaxLength(length)
+        self.write_uleb128(length)
+        self._buffer += value
         return self
 
     def write_string(self, value: str) -> "BcsSerializer":
@@ -355,7 +372,12 @@ class BcsSerializer:
             self for chaining
         """
         encoded = value.encode("utf-8")
-        return self.write_bytes(encoded)
+        length = len(encoded)
+        if length > MAX_SEQUENCE_LENGTH:
+            raise ExceededMaxLength(length)
+        self.write_uleb128(length)
+        self._buffer += encoded
+        return self
 
     def write_fixed_bytes(self, value: bytes | bytearray, length: int) -> "BcsSerializer":
         """Serialize fixed-length bytes (no length prefix).
@@ -372,7 +394,7 @@ class BcsSerializer:
         """
         if len(value) != length:
             raise ValueError(f"Expected {length} bytes, got {len(value)}")
-        self._write_bytes(value)
+        self._buffer += value
         return self
 
     # =========================================================================
@@ -437,12 +459,31 @@ class BcsSerializer:
         return self
 
     def write_vector_u8(self, values: Sequence[int]) -> "BcsSerializer":
-        """Serialize a vector of u8."""
-        return self.write_vector(values, lambda s, v: s.write_u8(v))
+        """Serialize a vector of u8 (optimized)."""
+        length = len(values)
+        if length > MAX_SEQUENCE_LENGTH:
+            raise ExceededMaxLength(length)
+        self.write_uleb128(length)
+        # Fast path: if it's already bytes-like, extend directly
+        if isinstance(values, (bytes, bytearray)):
+            self._buffer += values
+        else:
+            self._buffer += bytes(values)
+        return self
 
     def write_vector_u64(self, values: Sequence[int]) -> "BcsSerializer":
-        """Serialize a vector of u64."""
-        return self.write_vector(values, lambda s, v: s.write_u64(v))
+        """Serialize a vector of u64 (optimized)."""
+        length = len(values)
+        if length > MAX_SEQUENCE_LENGTH:
+            raise ExceededMaxLength(length)
+        self.write_uleb128(length)
+        buf = self._buffer
+        pack = _STRUCT_U64.pack
+        for v in values:
+            if not 0 <= v <= U64_MAX:
+                raise ValueError(f"u64 value out of range: {v}")
+            buf += pack(v)
+        return self
 
     def write_vector_string(self, values: Sequence[str]) -> "BcsSerializer":
         """Serialize a vector of strings."""
@@ -527,7 +568,7 @@ class BcsSerializer:
         # Write length and sorted entries
         self.write_uleb128(len(key_bytes_pairs))
         for key_bytes, key, value in key_bytes_pairs:
-            self._write_bytes(key_bytes)
+            self._buffer += key_bytes
             value_serializer(self, value)
 
         return self

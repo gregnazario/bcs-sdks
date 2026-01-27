@@ -5,16 +5,21 @@ import Foundation
 
 /// BCS Deserializer - Manual deserialization API
 public final class BcsDeserializer {
-    private let data: [UInt8]
-    private var offset: Int = 0
-    private var depth: Int = 0
+    @usableFromInline
+    internal let data: [UInt8]
+    @usableFromInline
+    internal var offset: Int = 0
+    @usableFromInline
+    internal var depth: Int = 0
 
     /// Create a deserializer from a byte array
+    @inlinable
     public init(_ data: [UInt8]) {
         self.data = data
     }
 
     /// Create a deserializer from Data
+    @inlinable
     public init(_ data: Data) {
         self.data = Array(data)
     }
@@ -22,6 +27,7 @@ public final class BcsDeserializer {
     // MARK: - Boolean
 
     /// Read a boolean value
+    @inlinable
     public func readBool() throws -> Bool {
         let byte = try readU8()
         switch byte {
@@ -34,49 +40,67 @@ public final class BcsDeserializer {
     // MARK: - Unsigned Integers
 
     /// Read an unsigned 8-bit integer
+    @inlinable
     public func readU8() throws -> UInt8 {
-        try checkRemaining(1)
+        guard offset < data.count else {
+            throw BcsError.unexpectedEof()
+        }
         let value = data[offset]
-        offset += 1
+        offset &+= 1
         return value
     }
 
     /// Read an unsigned 16-bit integer (little-endian)
+    @inlinable
     public func readU16() throws -> UInt16 {
-        try checkRemaining(2)
-        let value = UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
-        offset += 2
+        guard offset &+ 2 <= data.count else {
+            throw BcsError.unexpectedEof()
+        }
+        let value = UInt16(data[offset]) | (UInt16(data[offset &+ 1]) &<< 8)
+        offset &+= 2
         return value
     }
 
     /// Read an unsigned 32-bit integer (little-endian)
+    @inlinable
     public func readU32() throws -> UInt32 {
-        try checkRemaining(4)
-        var value: UInt32 = 0
-        for i in 0..<4 {
-            value |= UInt32(data[offset + i]) << (i * 8)
+        guard offset &+ 4 <= data.count else {
+            throw BcsError.unexpectedEof()
         }
-        offset += 4
+        let value = UInt32(data[offset])
+            | (UInt32(data[offset &+ 1]) &<< 8)
+            | (UInt32(data[offset &+ 2]) &<< 16)
+            | (UInt32(data[offset &+ 3]) &<< 24)
+        offset &+= 4
         return value
     }
 
     /// Read an unsigned 64-bit integer (little-endian)
+    @inlinable
     public func readU64() throws -> UInt64 {
-        try checkRemaining(8)
-        var value: UInt64 = 0
-        for i in 0..<8 {
-            value |= UInt64(data[offset + i]) << (i * 8)
+        guard offset &+ 8 <= data.count else {
+            throw BcsError.unexpectedEof()
         }
-        offset += 8
+        let value = UInt64(data[offset])
+            | (UInt64(data[offset &+ 1]) &<< 8)
+            | (UInt64(data[offset &+ 2]) &<< 16)
+            | (UInt64(data[offset &+ 3]) &<< 24)
+            | (UInt64(data[offset &+ 4]) &<< 32)
+            | (UInt64(data[offset &+ 5]) &<< 40)
+            | (UInt64(data[offset &+ 6]) &<< 48)
+            | (UInt64(data[offset &+ 7]) &<< 56)
+        offset &+= 8
         return value
     }
 
     /// Read an unsigned 128-bit integer (little-endian byte array)
+    @inlinable
     public func readU128() throws -> [UInt8] {
         try readFixedBytes(16)
     }
 
     /// Read an unsigned 256-bit integer (little-endian byte array)
+    @inlinable
     public func readU256() throws -> [UInt8] {
         try readFixedBytes(32)
     }
@@ -84,31 +108,37 @@ public final class BcsDeserializer {
     // MARK: - Signed Integers
 
     /// Read a signed 8-bit integer
+    @inlinable
     public func readI8() throws -> Int8 {
         Int8(bitPattern: try readU8())
     }
 
     /// Read a signed 16-bit integer (little-endian)
+    @inlinable
     public func readI16() throws -> Int16 {
         Int16(bitPattern: try readU16())
     }
 
     /// Read a signed 32-bit integer (little-endian)
+    @inlinable
     public func readI32() throws -> Int32 {
         Int32(bitPattern: try readU32())
     }
 
     /// Read a signed 64-bit integer (little-endian)
+    @inlinable
     public func readI64() throws -> Int64 {
         Int64(bitPattern: try readU64())
     }
 
     /// Read a signed 128-bit integer (little-endian byte array)
+    @inlinable
     public func readI128() throws -> [UInt8] {
         try readU128()
     }
 
     /// Read a signed 256-bit integer (little-endian byte array)
+    @inlinable
     public func readI256() throws -> [UInt8] {
         try readU256()
     }
@@ -116,23 +146,60 @@ public final class BcsDeserializer {
     // MARK: - ULEB128
 
     /// Read a ULEB128-encoded value
+    @inlinable
     public func readUleb128() throws -> UInt32 {
-        let (value, bytesRead) = try Uleb128.decode(data, offset: offset)
-        offset += bytesRead
-        return value
+        // Inline ULEB128 decoding for performance
+        var value: UInt32 = 0
+        var shift: UInt32 = 0
+
+        for i in 0..<5 {
+            guard offset < data.count else {
+                throw BcsError.unexpectedEof()
+            }
+
+            let byte = data[offset]
+            offset &+= 1
+            let digit = byte & 0x7F
+
+            value |= UInt32(digit) &<< shift
+
+            // Check if this is the last byte (high bit not set)
+            if (byte & 0x80) == 0 {
+                // Check for non-canonical encoding (trailing zeros)
+                if shift > 0 && digit == 0 {
+                    throw BcsError.nonCanonicalUleb128()
+                }
+
+                // Check for overflow on final byte
+                if i == 4 && digit > 0x0F {
+                    throw BcsError.uleb128Overflow()
+                }
+
+                return value
+            }
+
+            shift &+= 7
+        }
+
+        // If we've read 5 bytes and still have continuation bit, overflow
+        throw BcsError.uleb128Overflow()
     }
 
     // MARK: - Bytes and Strings
 
     /// Read fixed-length bytes (without length prefix)
+    @inlinable
     public func readFixedBytes(_ length: Int) throws -> [UInt8] {
-        try checkRemaining(length)
-        let result = Array(data[offset..<(offset + length)])
-        offset += length
+        guard offset &+ length <= data.count else {
+            throw BcsError.unexpectedEof()
+        }
+        let result = Array(data[offset..<(offset &+ length)])
+        offset &+= length
         return result
     }
 
     /// Read bytes with ULEB128 length prefix
+    @inlinable
     public func readBytes() throws -> [UInt8] {
         let length = Int(try readUleb128())
         try checkSequenceLength(length)
@@ -140,17 +207,30 @@ public final class BcsDeserializer {
     }
 
     /// Read a UTF-8 string with ULEB128 length prefix
+    @inlinable
     public func readString() throws -> String {
-        let bytes = try readBytes()
-        guard let str = String(bytes: bytes, encoding: .utf8) else {
+        let length = Int(try readUleb128())
+        try checkSequenceLength(length)
+        guard offset &+ length <= data.count else {
+            throw BcsError.unexpectedEof()
+        }
+        // Create string directly from slice to avoid intermediate array allocation
+        let endOffset = offset &+ length
+        let str = data[offset..<endOffset].withUnsafeBufferPointer { buffer in
+            String(decoding: buffer, as: UTF8.self)
+        }
+        // Validate UTF-8 by checking if round-trip produces same length
+        if str.utf8.count != length {
             throw BcsError.invalidUtf8()
         }
+        offset = endOffset
         return str
     }
 
     // MARK: - Composite Types
 
     /// Read an optional value
+    @inlinable
     public func readOption<T>(_ deserializer: (BcsDeserializer) throws -> T) throws -> T? {
         let tag = try readU8()
         switch tag {
@@ -161,6 +241,7 @@ public final class BcsDeserializer {
     }
 
     /// Read a vector with element deserializer
+    @inlinable
     public func readVector<T>(_ deserializer: (BcsDeserializer) throws -> T) throws -> [T] {
         let length = Int(try readUleb128())
         try checkSequenceLength(length)
@@ -183,7 +264,7 @@ public final class BcsDeserializer {
 
         var result: [K: V] = [:]
         result.reserveCapacity(length)
-        var prevKeyBytes: [UInt8]?
+        var prevKeyBytes: ArraySlice<UInt8>?
 
         for _ in 0..<length {
             // Remember position before reading key
@@ -191,13 +272,13 @@ public final class BcsDeserializer {
 
             let key = try keyDeserializer(self)
 
-            // Get key bytes for ordering check
-            let keyBytes = Array(data[keyStart..<offset])
+            // Get key bytes for ordering check (use slice to avoid allocation)
+            let keyBytes = data[keyStart..<offset]
 
             // Check ordering
             if let prev = prevKeyBytes {
-                if keyBytes <= prev {
-                    if keyBytes == prev {
+                if keyBytes.lexicographicallyPrecedes(prev) || keyBytes.elementsEqual(prev) {
+                    if keyBytes.elementsEqual(prev) {
                         throw BcsError.duplicateMapKey()
                     }
                     throw BcsError.nonCanonicalMap()
@@ -213,6 +294,7 @@ public final class BcsDeserializer {
     }
 
     /// Read an enum variant index
+    @inlinable
     public func readVariantIndex() throws -> UInt32 {
         try readUleb128()
     }
@@ -220,9 +302,10 @@ public final class BcsDeserializer {
     // MARK: - Container Depth
 
     /// Enter a struct/enum container (for depth tracking)
+    @inlinable
     @discardableResult
     public func enterContainer() throws -> BcsDeserializer {
-        depth += 1
+        depth &+= 1
         if depth > BcsConstants.maxContainerDepth {
             throw BcsError.exceededContainerDepth(depth)
         }
@@ -230,15 +313,17 @@ public final class BcsDeserializer {
     }
 
     /// Leave a struct/enum container
+    @inlinable
     @discardableResult
     public func leaveContainer() -> BcsDeserializer {
-        depth -= 1
+        depth &-= 1
         return self
     }
 
     // MARK: - State
 
     /// Check that all input has been consumed
+    @inlinable
     public func checkEnd() throws {
         if offset < data.count {
             throw BcsError.remainingInput(data.count - offset)
@@ -246,39 +331,30 @@ public final class BcsDeserializer {
     }
 
     /// Get the current offset
+    @inlinable
     public var currentOffset: Int {
         offset
     }
 
     /// Get the remaining bytes count
+    @inlinable
     public var remaining: Int {
         data.count - offset
     }
 
     /// Check if there's more data to read
+    @inlinable
     public var hasRemaining: Bool {
         offset < data.count
     }
 
     // MARK: - Private
 
-    private func checkRemaining(_ needed: Int) throws {
-        if offset + needed > data.count {
-            throw BcsError.unexpectedEof()
-        }
-    }
-
-    private func checkSequenceLength(_ length: Int) throws {
+    @usableFromInline
+    internal func checkSequenceLength(_ length: Int) throws {
         if length > BcsConstants.maxSequenceLength {
             throw BcsError.exceededMaxLength(length)
         }
     }
 }
 
-// MARK: - Array Comparison Extension
-
-extension Array where Element == UInt8 {
-    static func <= (lhs: [UInt8], rhs: [UInt8]) -> Bool {
-        lhs.lexicographicallyPrecedes(rhs) || lhs == rhs
-    }
-}

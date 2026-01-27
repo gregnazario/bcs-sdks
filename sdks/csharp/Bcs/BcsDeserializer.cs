@@ -22,6 +22,12 @@ namespace Bcs;
 /// </example>
 public class BcsDeserializer
 {
+    // Pre-computed constants for signed integer conversion
+    private static readonly BigInteger SignBit128 = BigInteger.One << 127;
+    private static readonly BigInteger TwoPow128 = BigInteger.One << 128;
+    private static readonly BigInteger SignBit256 = BigInteger.One << 255;
+    private static readonly BigInteger TwoPow256 = BigInteger.One << 256;
+
     private readonly ReadOnlyMemory<byte> _data;
     private int _offset;
 
@@ -317,17 +323,25 @@ public class BcsDeserializer
 
     private BigInteger ReadBigIntegerLE(int byteLength, bool signed)
     {
-        var bytes = _data.Span.Slice(_offset, byteLength).ToArray();
+        // Read directly from span without allocation
+        var span = _data.Span.Slice(_offset, byteLength);
         _offset += byteLength;
 
-        var value = new BigInteger(bytes, isUnsigned: true, isBigEndian: false);
+        var value = new BigInteger(span, isUnsigned: true, isBigEndian: false);
 
         if (signed)
         {
-            var signBit = BigInteger.One << (byteLength * 8 - 1);
+            // Use pre-computed constants for common sizes
+            var (signBit, twoPow) = byteLength switch
+            {
+                16 => (SignBit128, TwoPow128),
+                32 => (SignBit256, TwoPow256),
+                _ => (BigInteger.One << (byteLength * 8 - 1), BigInteger.One << (byteLength * 8))
+            };
+
             if (value >= signBit)
             {
-                value -= BigInteger.One << (byteLength * 8);
+                value -= twoPow;
             }
         }
 
