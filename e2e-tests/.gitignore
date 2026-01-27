@@ -4,6 +4,11 @@ test-data/
 # Benchmark results
 benchmark_results.json
 
+# Python cache (root level)
+__pycache__/
+*.pyc
+*.pyo
+
 # Rust build artifacts
 reference/target/
 runners/rust_runner/target/
@@ -55,10 +60,7 @@ runners/*.cmx
 runners/*.cma
 runners/*.cmxa
 
-# Python artifacts
-runners/__pycache__/
-runners/*.pyc
-runners/*.pyo
+# Python artifacts (covered by root level patterns)
 
 # Swift artifacts
 runners/.build/
