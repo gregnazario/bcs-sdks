@@ -295,6 +295,61 @@ public class BcsDeserializer
     /// <summary>Gets a slice of the data from start to current position.</summary>
     public ReadOnlySpan<byte> SliceFrom(int start) => _data.Span.Slice(start, _offset - start);
 
+    /// <summary>Deserializes a map with key validation (sorted keys, no duplicates).</summary>
+    /// <typeparam name="K">The key type.</typeparam>
+    /// <typeparam name="V">The value type.</typeparam>
+    /// <param name="keyDeserializer">Function to deserialize keys.</param>
+    /// <param name="valueDeserializer">Function to deserialize values.</param>
+    /// <returns>A dictionary containing the deserialized key-value pairs.</returns>
+    /// <exception cref="BcsException">Thrown if keys are not sorted or contain duplicates.</exception>
+    public Dictionary<K, V> ReadMap<K, V>(
+        Func<BcsDeserializer, K> keyDeserializer,
+        Func<BcsDeserializer, V> valueDeserializer) where K : notnull
+    {
+        var length = ReadMapLength();
+        var result = new Dictionary<K, V>((int)length);
+        byte[]? prevKeyBytes = null;
+
+        for (var i = 0u; i < length; i++)
+        {
+            var keyStart = _offset;
+            var key = keyDeserializer(this);
+            var keyEnd = _offset;
+            var keyBytes = _data.Span.Slice(keyStart, keyEnd - keyStart).ToArray();
+
+            if (prevKeyBytes != null)
+            {
+                var cmp = CompareBytes(prevKeyBytes, keyBytes);
+                if (cmp == 0)
+                {
+                    throw BcsException.DuplicateMapKey();
+                }
+                if (cmp > 0)
+                {
+                    throw BcsException.NonCanonicalMap();
+                }
+            }
+            prevKeyBytes = keyBytes;
+
+            var value = valueDeserializer(this);
+            result[key] = value;
+        }
+
+        return result;
+    }
+
+    /// <summary>Compare two byte arrays lexicographically (unsigned).</summary>
+    private static int CompareBytes(byte[] a, byte[] b)
+    {
+        var minLen = Math.Min(a.Length, b.Length);
+        for (var i = 0; i < minLen; i++)
+        {
+            if (a[i] < b[i]) return -1;
+            if (a[i] > b[i]) return 1;
+        }
+        return a.Length.CompareTo(b.Length);
+    }
+
     #endregion
 
     #region Container Depth

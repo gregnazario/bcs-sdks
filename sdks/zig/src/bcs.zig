@@ -436,6 +436,22 @@ pub const Serializer = struct {
     pub fn writeMapLen(self: *Self, len: usize) Error!void {
         try self.writeVectorLen(len);
     }
+
+    /// MapEntry for sorting
+    pub const MapEntry = struct {
+        key_bytes: []const u8,
+        value_bytes: []const u8,
+    };
+
+    /// Write a pre-sorted list of map entries (key_bytes, value_bytes pairs).
+    /// Entries must be sorted by key_bytes before calling this function.
+    pub fn writeMapEntries(self: *Self, entries: []const MapEntry) Error!void {
+        try self.writeMapLen(entries.len);
+        for (entries) |entry| {
+            try self.appendBytes(entry.key_bytes);
+            try self.appendBytes(entry.value_bytes);
+        }
+    }
 };
 
 // ============================================================================
@@ -745,6 +761,104 @@ pub const Deserializer = struct {
         if (a.len < b.len) return .lt;
         if (a.len > b.len) return .gt;
         return .eq;
+    }
+
+    /// Read and validate a map entry by entry.
+    /// Use this to manually validate map entries.
+    /// Returns the number of entries to read, and validates each key.
+    pub fn readMapValidated(
+        self: *Self,
+        comptime K: type,
+        comptime V: type,
+        allocator: std.mem.Allocator,
+        readKey: fn (*Self) Error!K,
+        readValue: fn (*Self) Error!V,
+    ) (Error || std.mem.Allocator.Error)!std.AutoHashMap(K, V) {
+        const length = try self.readMapLen();
+        var result = std.AutoHashMap(K, V).init(allocator);
+        errdefer result.deinit();
+
+        var prev_key_bytes: ?[]u8 = null;
+        defer if (prev_key_bytes) |bytes| allocator.free(bytes);
+
+        var i: u32 = 0;
+        while (i < length) : (i += 1) {
+            const key_start = self.offset;
+            const key = try readKey(self);
+            const key_end = self.offset;
+
+            // Copy key bytes for comparison
+            const key_bytes = try allocator.alloc(u8, key_end - key_start);
+            @memcpy(key_bytes, self.data[key_start..key_end]);
+
+            // Validate key ordering
+            if (prev_key_bytes) |prev| {
+                const cmp = compareBytes(prev, key_bytes);
+                if (cmp == .eq) {
+                    allocator.free(key_bytes);
+                    return Error.NonCanonicalMap; // Duplicate key
+                }
+                if (cmp == .gt) {
+                    allocator.free(key_bytes);
+                    return Error.NonCanonicalMap; // Keys not sorted
+                }
+                allocator.free(prev);
+            }
+            prev_key_bytes = key_bytes;
+
+            const value = try readValue(self);
+            try result.put(key, value);
+        }
+
+        return result;
+    }
+
+    /// Read a string-keyed map with validation.
+    pub fn readStringMap(
+        self: *Self,
+        comptime V: type,
+        allocator: std.mem.Allocator,
+        readValue: fn (*Self) Error!V,
+    ) (Error || std.mem.Allocator.Error)!std.StringHashMap(V) {
+        const length = try self.readMapLen();
+        var result = std.StringHashMap(V).init(allocator);
+        errdefer result.deinit();
+
+        var prev_key_bytes: ?[]u8 = null;
+        defer if (prev_key_bytes) |bytes| allocator.free(bytes);
+
+        var i: u32 = 0;
+        while (i < length) : (i += 1) {
+            const key_start = self.offset;
+            const key = try self.readString();
+            const key_end = self.offset;
+
+            // Copy key bytes for comparison (including length prefix)
+            const key_bytes = try allocator.alloc(u8, key_end - key_start);
+            @memcpy(key_bytes, self.data[key_start..key_end]);
+
+            // Validate key ordering
+            if (prev_key_bytes) |prev| {
+                const cmp = compareBytes(prev, key_bytes);
+                if (cmp == .eq) {
+                    allocator.free(key_bytes);
+                    return Error.NonCanonicalMap; // Duplicate key
+                }
+                if (cmp == .gt) {
+                    allocator.free(key_bytes);
+                    return Error.NonCanonicalMap; // Keys not sorted
+                }
+                allocator.free(prev);
+            }
+            prev_key_bytes = key_bytes;
+
+            const value = try readValue(self);
+            // Duplicate key string for storage
+            const key_dup = try allocator.dupe(u8, key);
+            try result.put(key_dup, value);
+        }
+
+        return result;
     }
 };
 

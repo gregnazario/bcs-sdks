@@ -401,7 +401,7 @@ func (s *Serializer) leaveContainer() {
 // MAP
 // ==========================================================================
 
-// MapEntry represents a key-value pair for map serialization.
+// MapEntry represents a key-value pair for map serialization with pre-serialized key bytes.
 type MapEntry struct {
 	KeyBytes []byte
 	Value    any
@@ -421,6 +421,48 @@ func SortMapEntries(entries []MapEntry) {
 	sort.Slice(entries, func(i, j int) bool {
 		return bytes.Compare(entries[i].KeyBytes, entries[j].KeyBytes) < 0
 	})
+}
+
+// WriteMapEntries writes pre-sorted map entries.
+// Entries must already be sorted by KeyBytes. Use SortMapEntries first.
+func (s *Serializer) WriteMapEntries(entries []MapEntry, valueSerializer func(*Serializer, any)) *Serializer {
+	s.WriteMapLen(len(entries))
+	for _, entry := range entries {
+		s.buf.Write(entry.KeyBytes)
+		valueSerializer(s, entry.Value)
+	}
+	return s
+}
+
+// WriteMapWithSerializer writes a map using serialization functions.
+// Automatically sorts entries by serialized key bytes.
+func (s *Serializer) WriteMapWithSerializer(
+	keys []any,
+	values []any,
+	keySerializer func(*Serializer, any),
+	valueSerializer func(*Serializer, any),
+) *Serializer {
+	if len(keys) != len(values) {
+		panic("keys and values must have the same length")
+	}
+
+	// Serialize keys to get their byte representation for sorting
+	entries := make([]MapEntry, len(keys))
+	tempSer := NewSerializer()
+	for i, key := range keys {
+		tempSer.Reset()
+		keySerializer(tempSer, key)
+		entries[i] = MapEntry{
+			KeyBytes: append([]byte(nil), tempSer.Bytes()...), // Copy bytes
+			Value:    values[i],
+		}
+	}
+
+	// Sort by serialized key bytes
+	SortMapEntries(entries)
+
+	// Write sorted entries
+	return s.WriteMapEntries(entries, valueSerializer)
 }
 
 // ==========================================================================

@@ -24,7 +24,7 @@ See [spec/BCS.md](spec/BCS.md) for the formal specification using RFC 2119 langu
 |----------|-----------|-------|--------|
 | [C](sdks/c) | `sdks/c` | ✅ Pass | Complete |
 | [C++](sdks/cpp) | `sdks/cpp` | ✅ 28 Pass | Complete |
-| [C#](sdks/csharp) | `sdks/csharp` | ✅ 35 Pass | Complete |
+| [C#](sdks/csharp) | `sdks/csharp` | ✅ 39 Pass | Complete |
 | [Dart](sdks/dart) | `sdks/dart` | ✅ 62 Pass | Complete |
 | [Elixir](sdks/elixir) | `sdks/elixir` | ✅ 218 Pass | Complete |
 | [Go](sdks/go) | `sdks/go` | ✅ Pass | Complete |

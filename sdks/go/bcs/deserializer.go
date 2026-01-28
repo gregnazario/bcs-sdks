@@ -401,6 +401,178 @@ func (d *Deserializer) SliceFrom(start int) []byte {
 	return d.data[start:d.offset]
 }
 
+// CompareBytes compares two byte slices lexicographically.
+// Returns -1 if a < b, 0 if a == b, 1 if a > b.
+func CompareBytes(a, b []byte) int {
+	minLen := len(a)
+	if len(b) < minLen {
+		minLen = len(b)
+	}
+	for i := 0; i < minLen; i++ {
+		if a[i] < b[i] {
+			return -1
+		}
+		if a[i] > b[i] {
+			return 1
+		}
+	}
+	if len(a) < len(b) {
+		return -1
+	}
+	if len(a) > len(b) {
+		return 1
+	}
+	return 0
+}
+
+// ReadMapWithDeserializer reads a map with key validation.
+// Returns keys and values as separate slices, both in sorted key order.
+// Validates that keys are sorted and rejects duplicates.
+func (d *Deserializer) ReadMapWithDeserializer(
+	keyDeserializer func(*Deserializer) (any, error),
+	valueDeserializer func(*Deserializer) (any, error),
+) ([]any, []any, error) {
+	length, err := d.ReadMapLen()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	keys := make([]any, 0, length)
+	values := make([]any, 0, length)
+	var prevKeyBytes []byte
+
+	for i := uint32(0); i < length; i++ {
+		keyStart := d.offset
+
+		key, err := keyDeserializer(d)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		keyEnd := d.offset
+		keyBytes := make([]byte, keyEnd-keyStart)
+		copy(keyBytes, d.data[keyStart:keyEnd])
+
+		// Validate key ordering
+		if prevKeyBytes != nil {
+			cmp := CompareBytes(prevKeyBytes, keyBytes)
+			if cmp == 0 {
+				return nil, nil, NewDuplicateMapKey()
+			}
+			if cmp > 0 {
+				return nil, nil, NewNonCanonicalMap()
+			}
+		}
+		prevKeyBytes = keyBytes
+
+		value, err := valueDeserializer(d)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		keys = append(keys, key)
+		values = append(values, value)
+	}
+
+	return keys, values, nil
+}
+
+// ReadStringMap reads a map with string keys.
+// Validates that keys are sorted and rejects duplicates.
+func (d *Deserializer) ReadStringMap(
+	valueDeserializer func(*Deserializer) (any, error),
+) (map[string]any, error) {
+	length, err := d.ReadMapLen()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]any, length)
+	var prevKeyBytes []byte
+
+	for i := uint32(0); i < length; i++ {
+		keyStart := d.offset
+
+		key, err := d.ReadString()
+		if err != nil {
+			return nil, err
+		}
+
+		keyEnd := d.offset
+		keyBytes := make([]byte, keyEnd-keyStart)
+		copy(keyBytes, d.data[keyStart:keyEnd])
+
+		// Validate key ordering
+		if prevKeyBytes != nil {
+			cmp := CompareBytes(prevKeyBytes, keyBytes)
+			if cmp == 0 {
+				return nil, NewDuplicateMapKey()
+			}
+			if cmp > 0 {
+				return nil, NewNonCanonicalMap()
+			}
+		}
+		prevKeyBytes = keyBytes
+
+		value, err := valueDeserializer(d)
+		if err != nil {
+			return nil, err
+		}
+
+		result[key] = value
+	}
+
+	return result, nil
+}
+
+// ReadU64Map reads a map with u64 keys.
+// Validates that keys are sorted and rejects duplicates.
+func (d *Deserializer) ReadU64Map(
+	valueDeserializer func(*Deserializer) (any, error),
+) (map[uint64]any, error) {
+	length, err := d.ReadMapLen()
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[uint64]any, length)
+	var prevKeyBytes []byte
+
+	for i := uint32(0); i < length; i++ {
+		keyStart := d.offset
+
+		key, err := d.ReadU64()
+		if err != nil {
+			return nil, err
+		}
+
+		keyEnd := d.offset
+		keyBytes := make([]byte, keyEnd-keyStart)
+		copy(keyBytes, d.data[keyStart:keyEnd])
+
+		// Validate key ordering
+		if prevKeyBytes != nil {
+			cmp := CompareBytes(prevKeyBytes, keyBytes)
+			if cmp == 0 {
+				return nil, NewDuplicateMapKey()
+			}
+			if cmp > 0 {
+				return nil, NewNonCanonicalMap()
+			}
+		}
+		prevKeyBytes = keyBytes
+
+		value, err := valueDeserializer(d)
+		if err != nil {
+			return nil, err
+		}
+
+		result[key] = value
+	}
+
+	return result, nil
+}
+
 // ==========================================================================
 // BATCH OPERATIONS
 // ==========================================================================

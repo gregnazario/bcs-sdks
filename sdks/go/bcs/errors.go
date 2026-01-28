@@ -28,8 +28,10 @@ const (
 	ErrExceededContainerDepth
 	// ErrRemainingInput indicates unconsumed input after deserialization.
 	ErrRemainingInput
-	// ErrNonCanonicalMap indicates map keys not sorted or has duplicates.
+	// ErrNonCanonicalMap indicates map keys not sorted.
 	ErrNonCanonicalMap
+	// ErrDuplicateMapKey indicates duplicate key in map.
+	ErrDuplicateMapKey
 	// ErrUnknownVariant indicates an unknown enum variant index.
 	ErrUnknownVariant
 	// ErrNotSupported indicates an unsupported type.
@@ -145,13 +147,18 @@ func NewRemainingInput(remaining int) *Error {
 }
 
 // NewNonCanonicalMap creates a non-canonical map error.
-func NewNonCanonicalMap(reason string) *Error {
-	if reason == "" {
-		reason = "keys not sorted or contain duplicates"
-	}
+func NewNonCanonicalMap() *Error {
 	return &Error{
 		Type:    ErrNonCanonicalMap,
-		Message: fmt.Sprintf("non-canonical map: %s", reason),
+		Message: "non-canonical map: keys not sorted",
+	}
+}
+
+// NewDuplicateMapKey creates a duplicate map key error.
+func NewDuplicateMapKey() *Error {
+	return &Error{
+		Type:    ErrDuplicateMapKey,
+		Message: "duplicate key in map",
 	}
 }
 

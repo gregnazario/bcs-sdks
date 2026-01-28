@@ -209,6 +209,49 @@ const uint8_t* bcs_deserializer_data_at(const bcs_deserializer_t* des, size_t of
  */
 int bcs_compare_bytes(const uint8_t* a, size_t a_len, const uint8_t* b, size_t b_len);
 
+/**
+ * Callback function type for deserializing map keys.
+ * Should return BCS_OK on success, error code on failure.
+ * The key_start and key_end offsets can be used for key comparison.
+ */
+typedef bcs_error_t (*bcs_key_deserializer_fn)(bcs_deserializer_t* des, void* key_out, void* user_data);
+
+/**
+ * Callback function type for deserializing map values.
+ */
+typedef bcs_error_t (*bcs_value_deserializer_fn)(bcs_deserializer_t* des, void* value_out, void* user_data);
+
+/**
+ * Callback function type for handling a deserialized key-value pair.
+ * Called with the key, value, and their serialized byte positions.
+ */
+typedef bcs_error_t (*bcs_map_entry_handler_fn)(
+    void* key, void* value,
+    const uint8_t* key_bytes, size_t key_len,
+    void* user_data);
+
+/**
+ * Read and validate a map with callbacks.
+ * Validates that keys are sorted and rejects duplicates.
+ * 
+ * @param des The deserializer
+ * @param key_deserializer Callback to deserialize each key
+ * @param value_deserializer Callback to deserialize each value
+ * @param entry_handler Callback to handle each key-value pair
+ * @param user_data User data passed to callbacks
+ * @param key_scratch Scratch buffer for storing temporary key (can be NULL if entry_handler stores keys)
+ * @param value_scratch Scratch buffer for storing temporary value
+ * @return BCS_OK on success, error code on failure
+ */
+bcs_error_t bcs_read_map_validated(
+    bcs_deserializer_t* des,
+    bcs_key_deserializer_fn key_deserializer,
+    bcs_value_deserializer_fn value_deserializer,
+    bcs_map_entry_handler_fn entry_handler,
+    void* user_data,
+    void* key_scratch,
+    void* value_scratch);
+
 /* ============================================================================
  * ULEB128 UTILITIES
  * ============================================================================ */

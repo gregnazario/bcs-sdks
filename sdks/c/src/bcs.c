@@ -814,6 +814,67 @@ int bcs_compare_bytes(const uint8_t* a, size_t a_len, const uint8_t* b, size_t b
     return 0;
 }
 
+bcs_error_t bcs_read_map_validated(
+    bcs_deserializer_t* des,
+    bcs_key_deserializer_fn key_deserializer,
+    bcs_value_deserializer_fn value_deserializer,
+    bcs_map_entry_handler_fn entry_handler,
+    void* user_data,
+    void* key_scratch,
+    void* value_scratch) {
+
+    if (BCS_UNLIKELY(!des || !key_deserializer || !value_deserializer || !entry_handler))
+        return BCS_ERR_NULL_POINTER;
+
+    size_t len;
+    bcs_error_t err = bcs_read_map_len(des, &len);
+    if (BCS_UNLIKELY(err != BCS_OK))
+        return err;
+
+    const uint8_t* prev_key_bytes = NULL;
+    size_t prev_key_len = 0;
+
+    for (size_t i = 0; i < len; i++) {
+        /* Record key start position */
+        size_t key_start = des->offset;
+
+        /* Deserialize key */
+        err = key_deserializer(des, key_scratch, user_data);
+        if (BCS_UNLIKELY(err != BCS_OK))
+            return err;
+
+        /* Record key end position */
+        size_t key_end = des->offset;
+        const uint8_t* key_bytes = des->data + key_start;
+        size_t key_len = key_end - key_start;
+
+        /* Validate key ordering */
+        if (prev_key_bytes != NULL) {
+            int cmp = bcs_compare_bytes(prev_key_bytes, prev_key_len, key_bytes, key_len);
+            if (cmp == 0) {
+                return BCS_ERR_DUPLICATE_MAP_KEY;
+            }
+            if (cmp > 0) {
+                return BCS_ERR_NON_CANONICAL_MAP;
+            }
+        }
+        prev_key_bytes = key_bytes;
+        prev_key_len = key_len;
+
+        /* Deserialize value */
+        err = value_deserializer(des, value_scratch, user_data);
+        if (BCS_UNLIKELY(err != BCS_OK))
+            return err;
+
+        /* Call entry handler */
+        err = entry_handler(key_scratch, value_scratch, key_bytes, key_len, user_data);
+        if (BCS_UNLIKELY(err != BCS_OK))
+            return err;
+    }
+
+    return BCS_OK;
+}
+
 /* ============================================================================
  * ULEB128 UTILITIES
  * ============================================================================ */

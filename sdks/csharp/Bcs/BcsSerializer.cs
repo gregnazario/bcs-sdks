@@ -336,6 +336,55 @@ public class BcsSerializer
         return WriteVectorLength(length);
     }
 
+    /// <summary>Serializes a map with keys sorted by their serialized bytes.</summary>
+    /// <typeparam name="K">The key type.</typeparam>
+    /// <typeparam name="V">The value type.</typeparam>
+    /// <param name="entries">The key-value pairs to serialize.</param>
+    /// <param name="keySerializer">Function to serialize keys.</param>
+    /// <param name="valueSerializer">Function to serialize values.</param>
+    /// <returns>This serializer for chaining.</returns>
+    public BcsSerializer WriteMap<K, V>(
+        IEnumerable<KeyValuePair<K, V>> entries,
+        Action<BcsSerializer, K> keySerializer,
+        Action<BcsSerializer, V> valueSerializer)
+    {
+        // Serialize keys to get their byte representation for sorting
+        var serializedEntries = new List<(byte[] keyBytes, K key, V value)>();
+        var tempSerializer = new BcsSerializer();
+
+        foreach (var entry in entries)
+        {
+            tempSerializer.Clear();
+            keySerializer(tempSerializer, entry.Key);
+            serializedEntries.Add((tempSerializer.ToArray(), entry.Key, entry.Value));
+        }
+
+        // Sort by serialized key bytes
+        serializedEntries.Sort((a, b) => CompareBytes(a.keyBytes, b.keyBytes));
+
+        // Write the sorted entries
+        WriteMapLength(serializedEntries.Count);
+        foreach (var (_, key, value) in serializedEntries)
+        {
+            keySerializer(this, key);
+            valueSerializer(this, value);
+        }
+
+        return this;
+    }
+
+    /// <summary>Compare two byte arrays lexicographically (unsigned).</summary>
+    private static int CompareBytes(byte[] a, byte[] b)
+    {
+        var minLen = Math.Min(a.Length, b.Length);
+        for (var i = 0; i < minLen; i++)
+        {
+            if (a[i] < b[i]) return -1;
+            if (a[i] > b[i]) return 1;
+        }
+        return a.Length.CompareTo(b.Length);
+    }
+
     #endregion
 
     #region Container Depth

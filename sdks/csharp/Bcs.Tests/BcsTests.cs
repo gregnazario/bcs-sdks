@@ -578,4 +578,112 @@ public class BcsTests
     }
 
     #endregion
+
+    #region Map Tests
+
+    [Fact]
+    public void WriteMapSortsKeys()
+    {
+        var entries = new Dictionary<string, uint>
+        {
+            { "zebra", 1 },
+            { "apple", 2 },
+            { "mango", 3 }
+        };
+
+        var ser = new BcsSerializer();
+        ser.WriteMap(
+            entries,
+            (s, k) => s.WriteString(k),
+            (s, v) => s.WriteU32(v)
+        );
+
+        // Deserialize and verify sorted order
+        var des = new BcsDeserializer(ser.ToArray());
+        var result = des.ReadMap(
+            d => d.ReadString(),
+            d => d.ReadU32()
+        );
+        des.CheckEnd();
+
+        Assert.Equal(3, result.Count);
+        Assert.Equal(2u, result["apple"]);
+        Assert.Equal(3u, result["mango"]);
+        Assert.Equal(1u, result["zebra"]);
+    }
+
+    [Fact]
+    public void ReadMapValidatesSortedKeys()
+    {
+        // Create a map with keys NOT in sorted order: "b" then "a"
+        var ser = new BcsSerializer();
+        ser.WriteMapLength(2);
+        ser.WriteString("b");  // key "b"
+        ser.WriteU32(1);       // value 1
+        ser.WriteString("a");  // key "a" - out of order!
+        ser.WriteU32(2);       // value 2
+
+        var des = new BcsDeserializer(ser.ToArray());
+        var ex = Assert.Throws<BcsException>(() =>
+            des.ReadMap(
+                d => d.ReadString(),
+                d => d.ReadU32()
+            )
+        );
+        Assert.Equal(BcsErrorType.NonCanonicalMap, ex.ErrorType);
+    }
+
+    [Fact]
+    public void ReadMapRejectsDuplicateKeys()
+    {
+        // Create a map with duplicate keys: "a" twice
+        var ser = new BcsSerializer();
+        ser.WriteMapLength(2);
+        ser.WriteString("a");  // key "a"
+        ser.WriteU32(1);       // value 1
+        ser.WriteString("a");  // key "a" again - duplicate!
+        ser.WriteU32(2);       // value 2
+
+        var des = new BcsDeserializer(ser.ToArray());
+        var ex = Assert.Throws<BcsException>(() =>
+            des.ReadMap(
+                d => d.ReadString(),
+                d => d.ReadU32()
+            )
+        );
+        Assert.Equal(BcsErrorType.DuplicateMapKey, ex.ErrorType);
+    }
+
+    [Fact]
+    public void MapRoundTrip()
+    {
+        var original = new Dictionary<uint, string>
+        {
+            { 100, "hundred" },
+            { 1, "one" },
+            { 50, "fifty" }
+        };
+
+        var ser = new BcsSerializer();
+        ser.WriteMap(
+            original,
+            (s, k) => s.WriteU32(k),
+            (s, v) => s.WriteString(v)
+        );
+
+        var des = new BcsDeserializer(ser.ToArray());
+        var result = des.ReadMap(
+            d => d.ReadU32(),
+            d => d.ReadString()
+        );
+        des.CheckEnd();
+
+        Assert.Equal(original.Count, result.Count);
+        foreach (var kvp in original)
+        {
+            Assert.Equal(kvp.Value, result[kvp.Key]);
+        }
+    }
+
+    #endregion
 }

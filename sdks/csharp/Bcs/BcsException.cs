@@ -23,8 +23,10 @@ public enum BcsErrorType
     ExceededContainerDepth,
     /// <summary>Remaining input after deserialization.</summary>
     RemainingInput,
-    /// <summary>Map keys not sorted or has duplicates.</summary>
+    /// <summary>Map keys not sorted.</summary>
     NonCanonicalMap,
+    /// <summary>Duplicate key in map.</summary>
+    DuplicateMapKey,
     /// <summary>Unknown enum variant index.</summary>
     UnknownVariant,
     /// <summary>Type not supported.</summary>
@@ -97,7 +99,11 @@ public class BcsException : Exception
 
     /// <summary>Creates a non-canonical map error.</summary>
     public static BcsException NonCanonicalMap(string? reason = null)
-        => new(BcsErrorType.NonCanonicalMap, $"Non-canonical map: {reason ?? "keys not sorted or contain duplicates"}");
+        => new(BcsErrorType.NonCanonicalMap, $"Non-canonical map: {reason ?? "keys not sorted"}");
+
+    /// <summary>Creates a duplicate map key error.</summary>
+    public static BcsException DuplicateMapKey()
+        => new(BcsErrorType.DuplicateMapKey, "Duplicate key in map");
 
     /// <summary>Creates an unknown variant error.</summary>
     public static BcsException UnknownVariant(uint index, uint maxIndex)

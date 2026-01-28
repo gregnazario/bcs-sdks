@@ -16,9 +16,9 @@ This report provides a comprehensive security and functionality audit of all 15 
 |----------|--------|
 | Critical Security Issues | 0 |
 | High Severity Issues | 0 |
-| Medium Severity Issues | 4 (map helpers only in C/C#/Go/Zig) |
+| Medium Severity Issues | 0 |
 | SDKs with Full Test Pass | **15/15** |
-| SDKs with Full Security Features | 11/15 |
+| SDKs with Full Security Features | **15/15** |
 
 ### Security Compliance Summary
 
@@ -87,12 +87,12 @@ All 15 SDKs pass their test suites.
 | ULEB128 Validation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | UTF-8 Validation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Depth Tracking | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Map Validation | ⚠️ | ✅ | ⚠️ | ✅ | ✅ | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
+| Map Validation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Remaining Input | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | u128/i128 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | u256/i256 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
 
-**Legend:** ✅ = Full, ⚠️ = Partial (helpers only), ❌ = Not supported
+**Legend:** ✅ = Full, ❌ = Not supported
 
 ---
 
@@ -168,12 +168,12 @@ All SDKs enforce `MAX_CONTAINER_DEPTH = 500`:
 
 | SDK | Full API | Key Sorting | Duplicate Rejection | Notes |
 |-----|----------|-------------|---------------------|-------|
-| C | ⚠️ Helpers | Manual | Manual | `bcs_compare_bytes()` provided |
+| C | ✅ | ✅ | ✅ | `bcs_read_map_validated()` with callbacks |
 | C++ | ✅ | ✅ | ✅ | `read_map()` fully validates |
-| C# | ⚠️ Helpers | Manual | Manual | `ReadMapLength()` only |
+| C# | ✅ | ✅ | ✅ | `ReadMap<K,V>()` fully validates |
 | Dart | ✅ | ✅ | ✅ | `readMap()` fully validates |
 | Elixir | ✅ | ✅ | ✅ | `read_map()` fully validates |
-| Go | ⚠️ Helpers | Manual | Manual | `SortMapEntries()` helper |
+| Go | ✅ | ✅ | ✅ | `ReadStringMap()`, `ReadU64Map()`, `ReadMapWithDeserializer()` |
 | Java | ✅ | ✅ | ✅ | `readMap()` fully validates |
 | Kotlin | ✅ | ✅ | ✅ | `readMap()` fully validates |
 | OCaml | ✅ | ✅ | ✅ | `read_map` fully validates |
@@ -182,7 +182,7 @@ All SDKs enforce `MAX_CONTAINER_DEPTH = 500`:
 | Rust | ✅ | ✅ | ✅ | Via Serde, validates ordering |
 | Swift | ✅ | ✅ | ✅ | `readMap()` fully validates |
 | TypeScript | ✅ | ✅ | ✅ | `readMap()` fully validates |
-| Zig | ⚠️ Helpers | Manual | Manual | `compareBytes()` provided |
+| Zig | ✅ | ✅ | ✅ | `readMapValidated()`, `readStringMap()` |
 
 ---
 
@@ -203,7 +203,7 @@ All SDKs enforce `MAX_CONTAINER_DEPTH = 500`:
 | Option | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Vector | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Fixed Array | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Maps | ⚠️ | ✅ | ⚠️ | ✅ | ✅ | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ |
+| Maps | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Structs | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Enums | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
@@ -237,36 +237,25 @@ All SDKs enforce `MAX_CONTAINER_DEPTH = 500`:
 
 | SDK | Rating | Notes |
 |-----|--------|-------|
-| **C++** | ⭐⭐⭐⭐⭐ | Complete implementation, all validations, template metaprogramming |
-| **Java** | ⭐⭐⭐⭐⭐ | Complete with all validations, BigInteger support |
-| **Kotlin** | ⭐⭐⭐⭐⭐ | Complete with all validations, extension functions |
-| **Python** | ⭐⭐⭐⭐⭐ | Complete, configurable max_alloc defense |
-| **Rust** | ⭐⭐⭐⭐⭐ | Serde integration, memory safe (missing u256/i256) |
-| **Elixir** | ⭐⭐⭐⭐⭐ | Functional style, all validations, result tuples |
-| **Ruby** | ⭐⭐⭐⭐⭐ | Complete, bignum support |
+| **C** | ⭐⭐⭐⭐⭐ | Complete with callback-based map validation |
+| **C++** | ⭐⭐⭐⭐⭐ | Complete implementation, template metaprogramming |
+| **C#** | ⭐⭐⭐⭐⭐ | Complete with generic map support |
 | **Dart** | ⭐⭐⭐⭐⭐ | Complete, zero-copy views |
+| **Elixir** | ⭐⭐⭐⭐⭐ | Functional style, all validations |
+| **Go** | ⭐⭐⭐⭐⭐ | Complete with typed map functions, object pooling |
+| **Java** | ⭐⭐⭐⭐⭐ | Complete with all validations |
+| **Kotlin** | ⭐⭐⭐⭐⭐ | Complete with extension functions |
+| **OCaml** | ⭐⭐⭐⭐⭐ | Complete, RFC 3629 UTF-8 validation |
+| **Python** | ⭐⭐⭐⭐⭐ | Complete, configurable max_alloc defense |
+| **Ruby** | ⭐⭐⭐⭐⭐ | Complete, bignum support |
+| **Rust** | ⭐⭐⭐⭐⭐ | Serde integration, memory safe (missing u256/i256) |
 | **Swift** | ⭐⭐⭐⭐⭐ | Complete, @inlinable optimizations |
 | **TypeScript** | ⭐⭐⭐⭐⭐ | Complete, native bigint |
-| **OCaml** | ⭐⭐⭐⭐⭐ | Complete, RFC 3629 UTF-8 validation |
-| **C** | ⭐⭐⭐⭐ | Solid core, map helpers only (manual validation) |
-| **C#** | ⭐⭐⭐⭐ | Complete core, map helpers only |
-| **Go** | ⭐⭐⭐⭐ | Complete core, object pooling, map helpers only |
-| **Zig** | ⭐⭐⭐⭐ | Complete core, comptime generics, map helpers only |
+| **Zig** | ⭐⭐⭐⭐⭐ | Complete with comptime generics |
 
 ---
 
 ## Remaining Recommendations
-
-### Medium Priority (Map Validation)
-
-The following SDKs provide map helper functions but require manual key validation:
-
-1. **C** - Has `bcs_compare_bytes()`, `bcs_deserializer_offset()`, `bcs_deserializer_data_at()`
-2. **C#** - Has `ReadMapLength()` only
-3. **Go** - Has `SortMapEntries()`, `ReadMapLen()`, `Position()`, `SliceFrom()`
-4. **Zig** - Has `readMapLen()`, `writeMapLen()`, `compareBytes()`, `getSlice()`
-
-**Recommendation**: Users of these SDKs must implement their own key validation when deserializing maps, or the SDK maintainers could add a `readMap()` function with automatic validation.
 
 ### Low Priority
 
