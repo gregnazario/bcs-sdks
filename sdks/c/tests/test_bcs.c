@@ -88,8 +88,36 @@ TEST(uleb128_decode_128) {
     ASSERT_EQ(value, 128);
 }
 
-TEST(uleb128_reject_non_canonical) {
+TEST(uleb128_reject_non_canonical_2byte) {
     uint8_t data[] = {0x80, 0x00};
+    uint32_t value;
+    bcs_error_t err;
+    size_t len = bcs_uleb128_decode(data, sizeof(data), &value, &err);
+    ASSERT_EQ(len, 0);
+    ASSERT_ERR(err, BCS_ERR_NON_CANONICAL_ULEB128);
+}
+
+TEST(uleb128_reject_non_canonical_3byte) {
+    uint8_t data[] = {0x80, 0x80, 0x00};
+    uint32_t value;
+    bcs_error_t err;
+    size_t len = bcs_uleb128_decode(data, sizeof(data), &value, &err);
+    ASSERT_EQ(len, 0);
+    ASSERT_ERR(err, BCS_ERR_NON_CANONICAL_ULEB128);
+}
+
+TEST(uleb128_reject_non_canonical_4byte) {
+    uint8_t data[] = {0x80, 0x80, 0x80, 0x00};
+    uint32_t value;
+    bcs_error_t err;
+    size_t len = bcs_uleb128_decode(data, sizeof(data), &value, &err);
+    ASSERT_EQ(len, 0);
+    ASSERT_ERR(err, BCS_ERR_NON_CANONICAL_ULEB128);
+}
+
+TEST(uleb128_reject_non_canonical_5byte) {
+    /* 0x80 0x80 0x80 0x80 0x00 is non-canonical (could be encoded in 4 bytes) */
+    uint8_t data[] = {0x80, 0x80, 0x80, 0x80, 0x00};
     uint32_t value;
     bcs_error_t err;
     size_t len = bcs_uleb128_decode(data, sizeof(data), &value, &err);
@@ -99,6 +127,16 @@ TEST(uleb128_reject_non_canonical) {
 
 TEST(uleb128_reject_overflow) {
     uint8_t data[] = {0xff, 0xff, 0xff, 0xff, 0x1f};
+    uint32_t value;
+    bcs_error_t err;
+    size_t len = bcs_uleb128_decode(data, sizeof(data), &value, &err);
+    ASSERT_EQ(len, 0);
+    ASSERT_ERR(err, BCS_ERR_ULEB128_OVERFLOW);
+}
+
+TEST(uleb128_reject_overflow_5byte_too_large) {
+    /* 5th byte >= 0x10 would overflow u32 */
+    uint8_t data[] = {0x80, 0x80, 0x80, 0x80, 0x10};
     uint32_t value;
     bcs_error_t err;
     size_t len = bcs_uleb128_decode(data, sizeof(data), &value, &err);
@@ -416,7 +454,7 @@ TEST(string_deserialize) {
     ASSERT_EQ(strcmp(buf, "hello"), 0);
 }
 
-TEST(string_invalid_utf8) {
+TEST(string_invalid_utf8_deserialize) {
     uint8_t data[] = {0x02, 0xff, 0xfe};
     bcs_deserializer_t des;
     ASSERT_OK(bcs_deserializer_init(&des, data, sizeof(data)));
@@ -424,6 +462,16 @@ TEST(string_invalid_utf8) {
     char buf[32];
     size_t len;
     ASSERT_ERR(bcs_read_string(&des, buf, sizeof(buf), &len), BCS_ERR_INVALID_UTF8);
+}
+
+TEST(string_invalid_utf8_serialize) {
+    bcs_serializer_t ser;
+    uint8_t buf[16];
+    ASSERT_OK(bcs_serializer_init(&ser, buf, sizeof(buf)));
+
+    /* Invalid UTF-8: 0xff is never valid */
+    char invalid[] = {(char)0xff, 0x00};
+    ASSERT_ERR(bcs_write_string(&ser, invalid), BCS_ERR_INVALID_UTF8);
 }
 
 /* ============================================================================
@@ -697,8 +745,12 @@ int main(void) {
     RUN_TEST(uleb128_encode_u32_max);
     RUN_TEST(uleb128_decode_zero);
     RUN_TEST(uleb128_decode_128);
-    RUN_TEST(uleb128_reject_non_canonical);
+    RUN_TEST(uleb128_reject_non_canonical_2byte);
+    RUN_TEST(uleb128_reject_non_canonical_3byte);
+    RUN_TEST(uleb128_reject_non_canonical_4byte);
+    RUN_TEST(uleb128_reject_non_canonical_5byte);
     RUN_TEST(uleb128_reject_overflow);
+    RUN_TEST(uleb128_reject_overflow_5byte_too_large);
 
     printf("\nBoolean tests:\n");
     RUN_TEST(bool_serialize_true);
@@ -728,7 +780,8 @@ int main(void) {
     RUN_TEST(string_serialize_empty);
     RUN_TEST(string_serialize_hello);
     RUN_TEST(string_deserialize);
-    RUN_TEST(string_invalid_utf8);
+    RUN_TEST(string_invalid_utf8_deserialize);
+    RUN_TEST(string_invalid_utf8_serialize);
 
     printf("\nBytes tests:\n");
     RUN_TEST(bytes_serialize);

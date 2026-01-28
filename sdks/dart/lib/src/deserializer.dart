@@ -77,12 +77,40 @@ class BcsDeserializer {
     return value;
   }
 
-  /// Read an unsigned 64-bit integer (little-endian)
+  /// Read an unsigned 64-bit integer (little-endian) as [BigInt].
+  ///
+  /// For values known to fit in a native [int], consider using [readU64Int]
+  /// for better performance.
   BigInt readU64() {
     if (_offset + 8 > _data.length) {
       throw BcsError.unexpectedEof();
     }
     return _readBigIntLE(8);
+  }
+
+  /// Read an unsigned 64-bit integer (little-endian) as native [int].
+  ///
+  /// This is an optimized version of [readU64] that returns a native [int].
+  /// On the Dart VM, this supports the full u64 range. On Dart Web (JavaScript),
+  /// values larger than 2^53-1 may lose precision.
+  ///
+  /// For values that require full 64-bit precision on all platforms,
+  /// use [readU64] which returns [BigInt].
+  int readU64Int() {
+    if (_offset + 8 > _data.length) {
+      throw BcsError.unexpectedEof();
+    }
+    // Read directly as int for better performance
+    final value = _data[_offset] |
+        (_data[_offset + 1] << 8) |
+        (_data[_offset + 2] << 16) |
+        (_data[_offset + 3] << 24) |
+        (_data[_offset + 4] << 32) |
+        (_data[_offset + 5] << 40) |
+        (_data[_offset + 6] << 48) |
+        (_data[_offset + 7] << 56);
+    _offset += 8;
+    return value;
   }
 
   /// Read an unsigned 128-bit integer (little-endian)
@@ -156,8 +184,28 @@ class BcsDeserializer {
   // BYTES AND STRINGS
   // ==========================================================================
 
-  /// Read fixed-length bytes (without length prefix)
+  /// Read fixed-length bytes (without length prefix) as a copy.
+  ///
+  /// Returns a new [Uint8List] containing a copy of the bytes.
+  /// This is safe to modify without affecting the deserializer.
+  ///
+  /// For performance-critical code where you don't need to modify the bytes,
+  /// consider using [readFixedBytesView] instead.
   Uint8List readFixedBytes(int length) {
+    if (_offset + length > _data.length) {
+      throw BcsError.unexpectedEof();
+    }
+    final result = Uint8List.fromList(_data.sublist(_offset, _offset + length));
+    _offset += length;
+    return result;
+  }
+
+  /// Read fixed-length bytes (without length prefix) as a view (zero-copy).
+  ///
+  /// **WARNING:** The returned [Uint8List] is a view into the input buffer.
+  /// Modifying the returned bytes will modify the original input data.
+  /// Only use this when you need maximum performance and won't modify the result.
+  Uint8List readFixedBytesView(int length) {
     if (_offset + length > _data.length) {
       throw BcsError.unexpectedEof();
     }
@@ -166,11 +214,22 @@ class BcsDeserializer {
     return result;
   }
 
-  /// Read bytes with ULEB128 length prefix
+  /// Read bytes with ULEB128 length prefix as a copy.
+  ///
+  /// Returns a new [Uint8List] containing a copy of the bytes.
   Uint8List readBytes() {
     final length = readUleb128();
     _checkSequenceLength(length);
     return readFixedBytes(length);
+  }
+
+  /// Read bytes with ULEB128 length prefix as a view (zero-copy).
+  ///
+  /// **WARNING:** The returned [Uint8List] is a view into the input buffer.
+  Uint8List readBytesView() {
+    final length = readUleb128();
+    _checkSequenceLength(length);
+    return readFixedBytesView(length);
   }
 
   /// Read a UTF-8 string with ULEB128 length prefix
@@ -180,7 +239,7 @@ class BcsDeserializer {
     if (_offset + length > _data.length) {
       throw BcsError.unexpectedEof();
     }
-    // Decode directly from subview to avoid copy
+    // Decode directly from view to avoid copy (utf8.decode doesn't modify input)
     try {
       final str = utf8.decode(
         Uint8List.sublistView(_data, _offset, _offset + length),
@@ -234,7 +293,7 @@ class BcsDeserializer {
 
       final key = keyDeserializer(this);
 
-      // Get key bytes for ordering check
+      // Get key bytes for ordering check (use view - we only compare, don't modify)
       final keyBytes = Uint8List.sublistView(_data, keyStart, _offset);
 
       // Check ordering
@@ -247,7 +306,8 @@ class BcsDeserializer {
           throw BcsError.nonCanonicalMap();
         }
       }
-      prevKeyBytes = keyBytes;
+      // Store a copy for the next comparison since we'll reuse the view
+      prevKeyBytes = Uint8List.fromList(keyBytes);
 
       final value = valueDeserializer(this);
       result[key] = value;
@@ -332,13 +392,51 @@ class BcsDeserializer {
     }
   }
 
-  /// Optimized BigInt read - builds value from bytes
+  /// Optimized BigInt read - builds value from bytes.
+  ///
+  /// Uses 64-bit chunks for better performance with large integers (u128, u256).
+  /// This reduces the number of BigInt operations from O(n) to O(n/8).
   BigInt _readBigIntLE(int byteLength) {
     var value = BigInt.zero;
-    // Process in chunks for better performance with large integers
-    for (var i = byteLength - 1; i >= 0; i--) {
-      value = (value << 8) | BigInt.from(_data[_offset + i]);
+
+    // Process in 64-bit chunks for better performance
+    final fullChunks = byteLength ~/ 8;
+    final remainingBytes = byteLength % 8;
+
+    // Process full 64-bit chunks from most significant to least significant
+    for (var chunk = fullChunks - 1; chunk >= 0; chunk--) {
+      final chunkOffset = _offset + chunk * 8;
+      // Build 64-bit word from little-endian bytes
+      final word = _data[chunkOffset] |
+          (_data[chunkOffset + 1] << 8) |
+          (_data[chunkOffset + 2] << 16) |
+          (_data[chunkOffset + 3] << 24) |
+          (_data[chunkOffset + 4] << 32) |
+          (_data[chunkOffset + 5] << 40) |
+          (_data[chunkOffset + 6] << 48) |
+          (_data[chunkOffset + 7] << 56);
+
+      if (value == BigInt.zero) {
+        value = BigInt.from(word).toUnsigned(64);
+      } else {
+        value = (value << 64) | BigInt.from(word).toUnsigned(64);
+      }
     }
+
+    // Handle any remaining bytes (for non-8-byte-aligned lengths)
+    if (remainingBytes > 0) {
+      final remainingOffset = _offset + fullChunks * 8;
+      var remaining = 0;
+      for (var i = remainingBytes - 1; i >= 0; i--) {
+        remaining = (remaining << 8) | _data[remainingOffset + i];
+      }
+      if (value == BigInt.zero) {
+        value = BigInt.from(remaining);
+      } else {
+        value = (value << (remainingBytes * 8)) | BigInt.from(remaining);
+      }
+    }
+
     _offset += byteLength;
     return value;
   }

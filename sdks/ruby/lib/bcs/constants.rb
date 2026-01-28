@@ -12,8 +12,8 @@ module BCS
   U16_MAX = 0xFFFF
   U32_MAX = 0xFFFFFFFF
   U64_MAX = 0xFFFFFFFFFFFFFFFF
-  U128_MAX = ((1 << 128) - 1).freeze
-  U256_MAX = ((1 << 256) - 1).freeze
+  U128_MAX = ((1 << 128) - 1)
+  U256_MAX = ((1 << 256) - 1)
 
   I8_MIN  = -128
   I8_MAX  = 127
@@ -24,13 +24,13 @@ module BCS
   I64_MIN = -9_223_372_036_854_775_808
   I64_MAX = 9_223_372_036_854_775_807
   I128_MIN = (-(1 << 127)).freeze
-  I128_MAX = ((1 << 127) - 1).freeze
+  I128_MAX = ((1 << 127) - 1)
   I256_MIN = (-(1 << 255)).freeze
-  I256_MAX = ((1 << 255) - 1).freeze
+  I256_MAX = ((1 << 255) - 1)
 
   # Pre-computed modulus values for signed integer operations
-  MODULUS_128 = (1 << 128).freeze
-  MODULUS_256 = (1 << 256).freeze
+  MODULUS_128 = (1 << 128)
+  MODULUS_256 = (1 << 256)
 
   # Pre-allocated byte strings for common values
   BYTE_FALSE = "\x00".b.freeze

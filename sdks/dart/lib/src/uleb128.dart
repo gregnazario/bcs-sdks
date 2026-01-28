@@ -9,11 +9,11 @@ class Uleb128 {
   /// Maximum number of bytes in a ULEB128-encoded u32
   static const int maxBytes = 5;
 
-  /// Pre-allocated buffer for encoding (avoid allocation in hot path)
-  static final Uint8List _encodeBuffer = Uint8List(maxBytes);
-
-  /// Encode a 32-bit unsigned integer as ULEB128 into a pre-allocated buffer
-  /// Returns the number of bytes written
+  /// Encode a 32-bit unsigned integer as ULEB128 into a pre-allocated buffer.
+  /// Returns the number of bytes written.
+  ///
+  /// The [buffer] must have at least [maxBytes] (5) bytes available starting
+  /// from [offset].
   static int encodeInto(int value, Uint8List buffer, [int offset = 0]) {
     if (value < 0 || value > maxValue) {
       throw BcsError.integerOutOfRange('uleb128');
@@ -34,10 +34,15 @@ class Uleb128 {
     return i - offset;
   }
 
-  /// Encode a 32-bit unsigned integer as ULEB128
+  /// Encode a 32-bit unsigned integer as ULEB128.
+  ///
+  /// Returns a new [Uint8List] containing the encoded bytes.
+  /// This method is thread-safe and allocates a new buffer for each call.
   static Uint8List encode(int value) {
-    final len = encodeInto(value, _encodeBuffer);
-    return Uint8List.fromList(_encodeBuffer.sublist(0, len));
+    // Allocate a local buffer to ensure thread safety
+    final buffer = Uint8List(maxBytes);
+    final len = encodeInto(value, buffer);
+    return Uint8List.fromList(buffer.sublist(0, len));
   }
 
   /// Decode a ULEB128-encoded value from bytes

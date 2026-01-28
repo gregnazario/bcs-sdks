@@ -4,6 +4,7 @@ module BCS
   # BCS Serializer - Manual serialization API
   # Optimized to use String buffer with binary encoding for better performance
   class Serializer
+
     # Default initial buffer capacity
     DEFAULT_CAPACITY = 256
 
@@ -17,10 +18,15 @@ module BCS
     # ========================================================================
 
     # Write a boolean value
-    # @param value [Boolean] The boolean to write
+    # @param value [Boolean] The boolean to write (must be true or false, not truthy/falsy)
     # @return [Serializer] self for chaining
+    # @raise [ArgumentError] if value is not a boolean
     def write_bool(value)
-      @buffer << (value ? "\x01" : "\x00")
+      case value
+      when true then @buffer << BYTE_TRUE
+      when false then @buffer << BYTE_FALSE
+      else raise ArgumentError, "write_bool requires true or false, got #{value.class}"
+      end
       self
     end
 
@@ -29,40 +35,60 @@ module BCS
     # ========================================================================
 
     # Write an unsigned 8-bit integer
+    # @param value [Integer] Value in range 0..255
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_u8(value)
-      raise Error.integer_out_of_range("u8") unless value >= 0 && value <= U8_MAX
+      raise TypeError, "u8 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("u8") unless value.between?(0, U8_MAX)
 
       @buffer << [value].pack("C")
       self
     end
 
     # Write an unsigned 16-bit integer (little-endian)
+    # @param value [Integer] Value in range 0..65535
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_u16(value)
-      raise Error.integer_out_of_range("u16") unless value >= 0 && value <= U16_MAX
+      raise TypeError, "u16 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("u16") unless value.between?(0, U16_MAX)
 
       @buffer << [value].pack("v")
       self
     end
 
     # Write an unsigned 32-bit integer (little-endian)
+    # @param value [Integer] Value in range 0..2^32-1
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_u32(value)
-      raise Error.integer_out_of_range("u32") unless value >= 0 && value <= U32_MAX
+      raise TypeError, "u32 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("u32") unless value.between?(0, U32_MAX)
 
       @buffer << [value].pack("V")
       self
     end
 
     # Write an unsigned 64-bit integer (little-endian)
+    # @param value [Integer] Value in range 0..2^64-1
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_u64(value)
-      raise Error.integer_out_of_range("u64") unless value >= 0 && value <= U64_MAX
+      raise TypeError, "u64 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("u64") unless value.between?(0, U64_MAX)
 
       @buffer << [value].pack("Q<")
       self
     end
 
     # Write an unsigned 128-bit integer (little-endian)
+    # @param value [Integer] Value in range 0..2^128-1
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_u128(value)
-      raise Error.integer_out_of_range("u128") unless value >= 0 && value <= U128_MAX
+      raise TypeError, "u128 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("u128") unless value.between?(0, U128_MAX)
 
       # Pack as two 64-bit little-endian values (low, high)
       low = value & U64_MAX
@@ -72,8 +98,12 @@ module BCS
     end
 
     # Write an unsigned 256-bit integer (little-endian)
+    # @param value [Integer] Value in range 0..2^256-1
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_u256(value)
-      raise Error.integer_out_of_range("u256") unless value >= 0 && value <= U256_MAX
+      raise TypeError, "u256 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("u256") unless value.between?(0, U256_MAX)
 
       # Pack as four 64-bit little-endian values
       @buffer << [
@@ -90,40 +120,60 @@ module BCS
     # ========================================================================
 
     # Write a signed 8-bit integer
+    # @param value [Integer] Value in range -128..127
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_i8(value)
-      raise Error.integer_out_of_range("i8") unless value >= I8_MIN && value <= I8_MAX
+      raise TypeError, "i8 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("i8") unless value.between?(I8_MIN, I8_MAX)
 
       @buffer << [value].pack("c")
       self
     end
 
     # Write a signed 16-bit integer (little-endian)
+    # @param value [Integer] Value in range -32768..32767
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_i16(value)
-      raise Error.integer_out_of_range("i16") unless value >= I16_MIN && value <= I16_MAX
+      raise TypeError, "i16 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("i16") unless value.between?(I16_MIN, I16_MAX)
 
       @buffer << [value].pack("s<")
       self
     end
 
     # Write a signed 32-bit integer (little-endian)
+    # @param value [Integer] Value in range -2^31..2^31-1
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_i32(value)
-      raise Error.integer_out_of_range("i32") unless value >= I32_MIN && value <= I32_MAX
+      raise TypeError, "i32 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("i32") unless value.between?(I32_MIN, I32_MAX)
 
       @buffer << [value].pack("l<")
       self
     end
 
     # Write a signed 64-bit integer (little-endian)
+    # @param value [Integer] Value in range -2^63..2^63-1
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_i64(value)
-      raise Error.integer_out_of_range("i64") unless value >= I64_MIN && value <= I64_MAX
+      raise TypeError, "i64 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("i64") unless value.between?(I64_MIN, I64_MAX)
 
       @buffer << [value].pack("q<")
       self
     end
 
     # Write a signed 128-bit integer (little-endian)
+    # @param value [Integer] Value in range -2^127..2^127-1
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_i128(value)
-      raise Error.integer_out_of_range("i128") unless value >= I128_MIN && value <= I128_MAX
+      raise TypeError, "i128 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("i128") unless value.between?(I128_MIN, I128_MAX)
 
       unsigned = value & U128_MAX
       low = unsigned & U64_MAX
@@ -133,8 +183,12 @@ module BCS
     end
 
     # Write a signed 256-bit integer (little-endian)
+    # @param value [Integer] Value in range -2^255..2^255-1
+    # @raise [TypeError] if value is not an Integer
+    # @raise [BCS::Error] if value is out of range
     def write_i256(value)
-      raise Error.integer_out_of_range("i256") unless value >= I256_MIN && value <= I256_MAX
+      raise TypeError, "i256 requires Integer, got #{value.class}" unless value.is_a?(Integer)
+      raise Error.integer_out_of_range("i256") unless value.between?(I256_MIN, I256_MAX)
 
       unsigned = value & U256_MAX
       @buffer << [
@@ -399,5 +453,6 @@ module BCS
     def leave_container
       @depth -= 1 if @depth.positive?
     end
+
   end
 end

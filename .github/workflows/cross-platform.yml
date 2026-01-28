@@ -1,0 +1,552 @@
+name: Cross-Platform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress runs on new commits to same PR/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # =============================================================================
+  # RUST SDK - Cross-Platform
+  # =============================================================================
+
+  rust-cross:
+    name: Rust (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ hashFiles('sdks/rust/**') != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 - native
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            cross: false
+            test: true
+          # Linux ARM64 - cross-compile with cross-rs
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            cross: true
+            test: true
+          # macOS Intel - native
+          - os: macos-13
+            target: x86_64-apple-darwin
+            cross: false
+            test: true
+          # macOS ARM - native
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            cross: false
+            test: true
+          # Windows x86_64 - native
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            cross: false
+            test: true
+          # Windows ARM64 - cross-compile (build only)
+          - os: ubuntu-latest
+            target: aarch64-pc-windows-gnullvm
+            cross: true
+            test: false
+          # WASM - build and test with wasm-pack
+          - os: ubuntu-latest
+            target: wasm32-unknown-unknown
+            cross: false
+            test: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-rs
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            sdks/rust/target
+          key: rust-${{ matrix.target }}-${{ hashFiles('sdks/rust/Cargo.lock') }}
+          restore-keys: rust-${{ matrix.target }}-
+
+      - name: Build (native)
+        if: ${{ !matrix.cross }}
+        run: cargo build --release --target ${{ matrix.target }}
+        working-directory: sdks/rust
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
+        working-directory: sdks/rust
+
+      - name: Test (native)
+        if: ${{ matrix.test && !matrix.cross }}
+        run: cargo test --target ${{ matrix.target }}
+        working-directory: sdks/rust
+
+      - name: Test (cross with QEMU)
+        if: ${{ matrix.test && matrix.cross }}
+        run: cross test --target ${{ matrix.target }}
+        working-directory: sdks/rust
+
+  # =============================================================================
+  # GO SDK - Cross-Platform
+  # =============================================================================
+
+  go-cross:
+    name: Go (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ hashFiles('sdks/go/**') != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 - native
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            test: true
+          # Linux ARM64 - cross-compile
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            test: false
+          # macOS Intel - native
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
+            test: true
+          # macOS ARM - native
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            test: true
+          # Windows x86_64 - native
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            test: true
+          # Windows ARM64 - cross-compile (build only)
+          - os: ubuntu-latest
+            goos: windows
+            goarch: arm64
+            test: false
+          # WASM - build only
+          - os: ubuntu-latest
+            goos: js
+            goarch: wasm
+            test: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: sdks/go/go.sum
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build ./...
+        working-directory: sdks/go
+
+      - name: Test
+        if: matrix.test
+        run: go test -v ./...
+        working-directory: sdks/go
+
+  # =============================================================================
+  # ZIG SDK - Cross-Platform
+  # =============================================================================
+
+  zig-cross:
+    name: Zig (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/zig/**') != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - target: x86_64-linux-gnu
+            test: true
+          # Linux ARM64
+          - target: aarch64-linux-gnu
+            test: false
+          # macOS Intel
+          - target: x86_64-macos
+            test: false
+          # macOS ARM
+          - target: aarch64-macos
+            test: false
+          # Windows x86_64
+          - target: x86_64-windows
+            test: false
+          # Windows ARM64
+          - target: aarch64-windows
+            test: false
+          # WASM
+          - target: wasm32-wasi
+            test: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: '0.13.0'
+
+      - name: Build
+        run: zig build -Dtarget=${{ matrix.target }}
+        working-directory: sdks/zig
+
+      - name: Test (native only)
+        if: matrix.test
+        run: zig build test
+        working-directory: sdks/zig
+
+  # Native Zig tests on each platform
+  zig-native:
+    name: Zig Native (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ hashFiles('sdks/zig/**') != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-13, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: '0.13.0'
+
+      - name: Build
+        run: zig build
+        working-directory: sdks/zig
+
+      - name: Test
+        run: zig build test
+        working-directory: sdks/zig
+
+  # =============================================================================
+  # C SDK - Cross-Platform
+  # =============================================================================
+
+  c-cross:
+    name: C (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ hashFiles('sdks/c/**') != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 - GCC
+          - name: linux-x64-gcc
+            os: ubuntu-latest
+            cc: gcc
+            test: true
+          # Linux x86_64 - Clang
+          - name: linux-x64-clang
+            os: ubuntu-latest
+            cc: clang
+            test: true
+          # Linux ARM64 - cross-compile
+          - name: linux-arm64
+            os: ubuntu-latest
+            cc: aarch64-linux-gnu-gcc
+            cross: true
+            test: false
+          # macOS Intel
+          - name: macos-intel
+            os: macos-13
+            cc: clang
+            test: true
+          # macOS ARM
+          - name: macos-arm
+            os: macos-latest
+            cc: clang
+            test: true
+          # Windows x86_64 - MSVC
+          - name: windows-x64-msvc
+            os: windows-latest
+            cc: cl
+            test: true
+          # Windows x86_64 - MinGW
+          - name: windows-x64-mingw
+            os: windows-latest
+            cc: gcc
+            test: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross-compiler (Linux ARM64)
+        if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install clang-format and clang-tidy (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format clang-tidy
+
+      - name: Setup MSVC (Windows)
+        if: matrix.cc == 'cl'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build
+        env:
+          CC: ${{ matrix.cc }}
+        run: make build
+        working-directory: sdks/c
+        shell: bash
+
+      - name: Test
+        if: matrix.test
+        run: make test
+        working-directory: sdks/c
+        shell: bash
+
+  # C SDK WASM with Emscripten
+  c-wasm:
+    name: C (wasm-emscripten)
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/c/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.51'
+
+      - name: Build with Emscripten
+        run: |
+          emcc -O2 -I include src/bcs.c -c -o build/bcs.o
+          mkdir -p build
+          emar rcs build/libbcs.a build/bcs.o
+        working-directory: sdks/c
+
+  # =============================================================================
+  # C++ SDK - Cross-Platform
+  # =============================================================================
+
+  cpp-cross:
+    name: C++ (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ hashFiles('sdks/cpp/**') != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 - GCC
+          - name: linux-x64-gcc
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            test: true
+          # Linux x86_64 - Clang
+          - name: linux-x64-clang
+            os: ubuntu-latest
+            cc: clang
+            cxx: clang++
+            test: true
+          # Linux ARM64 - cross-compile
+          - name: linux-arm64
+            os: ubuntu-latest
+            cc: aarch64-linux-gnu-gcc
+            cxx: aarch64-linux-gnu-g++
+            cmake_args: -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64
+            cross: true
+            test: false
+          # macOS Intel
+          - name: macos-intel
+            os: macos-13
+            cc: clang
+            cxx: clang++
+            test: true
+          # macOS ARM
+          - name: macos-arm
+            os: macos-latest
+            cc: clang
+            cxx: clang++
+            test: true
+          # Windows x86_64 - MSVC
+          - name: windows-x64-msvc
+            os: windows-latest
+            test: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross-compiler (Linux ARM64)
+        if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-aarch64-linux-gnu
+
+      - name: Install tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang-format clang-tidy
+
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake -B build ${{ matrix.cmake_args }}
+        working-directory: sdks/cpp
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -B build
+        working-directory: sdks/cpp
+
+      - name: Build
+        run: cmake --build build --config Release
+        working-directory: sdks/cpp
+
+      - name: Test
+        if: matrix.test
+        run: ctest --test-dir build --output-on-failure -C Release
+        working-directory: sdks/cpp
+
+  # C++ SDK WASM with Emscripten
+  cpp-wasm:
+    name: C++ (wasm-emscripten)
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/cpp/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.51'
+
+      - name: Configure with Emscripten
+        run: emcmake cmake -B build -DBCS_BUILD_TESTS=OFF
+        working-directory: sdks/cpp
+
+      - name: Build
+        run: cmake --build build
+        working-directory: sdks/cpp
+
+  # =============================================================================
+  # C# SDK - Cross-Platform
+  # =============================================================================
+
+  csharp-cross:
+    name: C# (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ hashFiles('sdks/csharp/**') != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 - native
+          - name: linux-x64
+            os: ubuntu-latest
+            rid: linux-x64
+            test: true
+          # Linux ARM64 - cross-compile
+          - name: linux-arm64
+            os: ubuntu-latest
+            rid: linux-arm64
+            test: false
+          # macOS Intel - native
+          - name: macos-intel
+            os: macos-13
+            rid: osx-x64
+            test: true
+          # macOS ARM - native
+          - name: macos-arm
+            os: macos-latest
+            rid: osx-arm64
+            test: true
+          # Windows x86_64 - native
+          - name: windows-x64
+            os: windows-latest
+            rid: win-x64
+            test: true
+          # Windows ARM64 - cross-compile
+          - name: windows-arm64
+            os: ubuntu-latest
+            rid: win-arm64
+            test: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore
+        working-directory: sdks/csharp
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore -r ${{ matrix.rid }}
+        working-directory: sdks/csharp
+
+      - name: Test
+        if: matrix.test
+        run: dotnet test --configuration Release --no-build --verbosity normal
+        working-directory: sdks/csharp
+
+  # =============================================================================
+  # SWIFT SDK - Cross-Platform
+  # =============================================================================
+
+  swift-cross:
+    name: Swift (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    if: ${{ hashFiles('sdks/swift/**') != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Intel - native
+          - name: macos-intel
+            os: macos-13
+            test: true
+          # macOS ARM - native
+          - name: macos-arm
+            os: macos-latest
+            test: true
+          # Linux x86_64 - using official Swift
+          - name: linux-x64
+            os: ubuntu-latest
+            test: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Swift (Linux)
+        if: runner.os == 'Linux'
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: '5.10'
+
+      - name: Build
+        run: swift build -c release
+        working-directory: sdks/swift
+
+      - name: Test
+        if: matrix.test
+        run: swift test
+        working-directory: sdks/swift

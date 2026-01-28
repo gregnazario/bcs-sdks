@@ -3,12 +3,14 @@
 module BCS
   # Base class for all BCS errors
   class Error < StandardError
+
     attr_reader :type
 
     def initialize(type, message)
       @type = type
       super(message)
     end
+
   end
 
   # Error types
@@ -29,6 +31,7 @@ module BCS
 
   # Factory methods for errors
   class << Error
+
     def unexpected_eof
       new(ErrorType::UNEXPECTED_EOF, "Unexpected end of input")
     end
@@ -78,5 +81,6 @@ module BCS
     def invalid_option(value)
       new(ErrorType::INVALID_OPTION, "Invalid option tag: #{value} (expected 0 or 1)")
     end
+
   end
 end

@@ -126,11 +126,11 @@ final class PrimitiveTypeTests: XCTestCase {
         XCTAssertEqual(ser.toBytes(), [0xff, 0xff, 0xff, 0xff])
 
         ser.clear()
-        ser.writeI32(2147483647)  // max
+        ser.writeI32(2_147_483_647)  // max
         XCTAssertEqual(ser.toBytes(), [0xff, 0xff, 0xff, 0x7f])
 
         ser.clear()
-        ser.writeI32(-2147483648)  // min
+        ser.writeI32(-2_147_483_648)  // min
         XCTAssertEqual(ser.toBytes(), [0x00, 0x00, 0x00, 0x80])
     }
 
@@ -140,7 +140,7 @@ final class PrimitiveTypeTests: XCTestCase {
         XCTAssertEqual(ser.toBytes(), [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])
 
         ser.clear()
-        ser.writeI64(9223372036854775807)  // max
+        ser.writeI64(9_223_372_036_854_775_807)  // max
         XCTAssertEqual(ser.toBytes(), [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f])
 
         ser.clear()
@@ -161,7 +161,7 @@ final class PrimitiveTypeTests: XCTestCase {
         XCTAssertEqual(try des1.readI32(), -1)
 
         let des2 = BcsDeserializer([0x00, 0x00, 0x00, 0x80])
-        XCTAssertEqual(try des2.readI32(), -2147483648)
+        XCTAssertEqual(try des2.readI32(), -2_147_483_648)
     }
 
     func testI64Deserialization() throws {
@@ -385,6 +385,227 @@ final class CompositeTypeTests: XCTestCase {
             }
             XCTAssertEqual(bcsError.type, .duplicateMapKey)
         }
+    }
+}
+
+// MARK: - Container Depth and Utility Tests
+
+final class ContainerDepthTests: XCTestCase {
+
+    func testContainerDepthLimit() throws {
+        let ser = BcsSerializer()
+
+        // Enter containers up to the limit
+        for _ in 0..<BcsConstants.maxContainerDepth {
+            try ser.enterContainer()
+        }
+
+        // One more should fail
+        XCTAssertThrowsError(try ser.enterContainer()) { error in
+            guard let bcsError = error as? BcsError else {
+                XCTFail("Expected BcsError")
+                return
+            }
+            XCTAssertEqual(bcsError.type, .exceededContainerDepth(501))
+        }
+    }
+
+    func testDeserializerContainerDepthLimit() throws {
+        let des = BcsDeserializer([])
+
+        // Enter containers up to the limit
+        for _ in 0..<BcsConstants.maxContainerDepth {
+            try des.enterContainer()
+        }
+
+        // One more should fail
+        XCTAssertThrowsError(try des.enterContainer()) { error in
+            guard let bcsError = error as? BcsError else {
+                XCTFail("Expected BcsError")
+                return
+            }
+            XCTAssertEqual(bcsError.type, .exceededContainerDepth(501))
+        }
+    }
+
+    func testLeaveContainerDoesNotUnderflow() {
+        let ser = BcsSerializer()
+
+        // Call leaveContainer without enterContainer - should not crash
+        ser.leaveContainer()
+        ser.leaveContainer()
+        ser.leaveContainer()
+
+        // Should still work normally
+        ser.writeU8(42)
+        XCTAssertEqual(ser.toBytes(), [42])
+    }
+
+    func testDeserializerLeaveContainerDoesNotUnderflow() {
+        let des = BcsDeserializer([42])
+
+        // Call leaveContainer without enterContainer - should not crash
+        des.leaveContainer()
+        des.leaveContainer()
+        des.leaveContainer()
+
+        // Should still work normally
+        XCTAssertEqual(try? des.readU8(), 42)
+    }
+}
+
+// MARK: - Peek, Skip, and Utility Tests
+
+final class DeserializerUtilityTests: XCTestCase {
+
+    func testPeek() throws {
+        let des = BcsDeserializer([0x42, 0x43, 0x44])
+
+        // Peek should not advance offset
+        XCTAssertEqual(try des.peek(), 0x42)
+        XCTAssertEqual(try des.peek(), 0x42)
+        XCTAssertEqual(des.currentOffset, 0)
+
+        // Read should advance
+        XCTAssertEqual(try des.readU8(), 0x42)
+        XCTAssertEqual(try des.peek(), 0x43)
+    }
+
+    func testPeekOnEmpty() {
+        let des = BcsDeserializer([])
+        XCTAssertThrowsError(try des.peek()) { error in
+            guard let bcsError = error as? BcsError else {
+                XCTFail("Expected BcsError")
+                return
+            }
+            XCTAssertEqual(bcsError.type, .unexpectedEof)
+        }
+    }
+
+    func testSkip() throws {
+        let des = BcsDeserializer([0x01, 0x02, 0x03, 0x04, 0x05])
+
+        try des.skip(2)
+        XCTAssertEqual(des.currentOffset, 2)
+        XCTAssertEqual(try des.readU8(), 0x03)
+
+        try des.skip(1)
+        XCTAssertEqual(try des.readU8(), 0x05)
+    }
+
+    func testSkipBeyondEnd() {
+        let des = BcsDeserializer([0x01, 0x02])
+        XCTAssertThrowsError(try des.skip(3)) { error in
+            guard let bcsError = error as? BcsError else {
+                XCTFail("Expected BcsError")
+                return
+            }
+            XCTAssertEqual(bcsError.type, .unexpectedEof)
+        }
+    }
+
+    func testReadFixedBytesSlice() throws {
+        let des = BcsDeserializer([0x01, 0x02, 0x03, 0x04, 0x05])
+        let slice = try des.readFixedBytesSlice(3)
+        XCTAssertEqual(Array(slice), [0x01, 0x02, 0x03])
+        XCTAssertEqual(des.currentOffset, 3)
+    }
+
+    func testSerializerBytesProperty() {
+        let ser = BcsSerializer()
+        ser.writeU8(1).writeU8(2).writeU8(3)
+
+        // Zero-copy access
+        let bytes = ser.bytes
+        XCTAssertEqual(Array(bytes), [1, 2, 3])
+    }
+}
+
+// MARK: - Batch Operations Tests
+
+final class BatchOperationsTests: XCTestCase {
+
+    func testWriteU8Vector() throws {
+        let ser = BcsSerializer()
+        try ser.writeU8Vector([1, 2, 3, 4, 5])
+        XCTAssertEqual(ser.toBytes(), [0x05, 1, 2, 3, 4, 5])
+    }
+
+    func testReadU8Vector() throws {
+        let des = BcsDeserializer([0x05, 1, 2, 3, 4, 5])
+        let vec = try des.readU8Vector()
+        XCTAssertEqual(vec, [1, 2, 3, 4, 5])
+    }
+
+    func testWriteU16Vector() throws {
+        let ser = BcsSerializer()
+        try ser.writeU16Vector([0x0102, 0x0304])
+        // Length 2, then 0x0102 as [0x02, 0x01], 0x0304 as [0x04, 0x03]
+        XCTAssertEqual(ser.toBytes(), [0x02, 0x02, 0x01, 0x04, 0x03])
+    }
+
+    func testReadU16Vector() throws {
+        let des = BcsDeserializer([0x02, 0x02, 0x01, 0x04, 0x03])
+        let vec = try des.readU16Vector()
+        XCTAssertEqual(vec, [0x0102, 0x0304])
+    }
+
+    func testWriteU32Vector() throws {
+        let ser = BcsSerializer()
+        try ser.writeU32Vector([0x0102_0304])
+        XCTAssertEqual(ser.toBytes(), [0x01, 0x04, 0x03, 0x02, 0x01])
+    }
+
+    func testReadU32Vector() throws {
+        let des = BcsDeserializer([0x01, 0x04, 0x03, 0x02, 0x01])
+        let vec = try des.readU32Vector()
+        XCTAssertEqual(vec, [0x0102_0304])
+    }
+
+    func testWriteU64Vector() throws {
+        let ser = BcsSerializer()
+        try ser.writeU64Vector([0x0102_0304_0506_0708])
+        XCTAssertEqual(ser.toBytes(), [0x01, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01])
+    }
+
+    func testReadU64Vector() throws {
+        let des = BcsDeserializer([0x01, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01])
+        let vec = try des.readU64Vector()
+        XCTAssertEqual(vec, [0x0102_0304_0506_0708])
+    }
+
+    func testBatchVectorRoundTrip() throws {
+        let u8s: [UInt8] = [1, 2, 3, 255]
+        let u16s: [UInt16] = [1, 1000, 65535]
+        let u32s: [UInt32] = [1, 100000, UInt32.max]
+        let u64s: [UInt64] = [1, 10_000_000_000, UInt64.max]
+
+        let ser = BcsSerializer()
+        try ser.writeU8Vector(u8s)
+        try ser.writeU16Vector(u16s)
+        try ser.writeU32Vector(u32s)
+        try ser.writeU64Vector(u64s)
+
+        let des = BcsDeserializer(ser.toBytes())
+        XCTAssertEqual(try des.readU8Vector(), u8s)
+        XCTAssertEqual(try des.readU16Vector(), u16s)
+        XCTAssertEqual(try des.readU32Vector(), u32s)
+        XCTAssertEqual(try des.readU64Vector(), u64s)
+        try des.checkEnd()
+    }
+
+    func testEmptyVectors() throws {
+        let ser = BcsSerializer()
+        try ser.writeU8Vector([])
+        try ser.writeU16Vector([])
+        try ser.writeU32Vector([])
+        try ser.writeU64Vector([])
+
+        let des = BcsDeserializer(ser.toBytes())
+        XCTAssertEqual(try des.readU8Vector(), [])
+        XCTAssertEqual(try des.readU16Vector(), [])
+        XCTAssertEqual(try des.readU32Vector(), [])
+        XCTAssertEqual(try des.readU64Vector(), [])
     }
 }
 

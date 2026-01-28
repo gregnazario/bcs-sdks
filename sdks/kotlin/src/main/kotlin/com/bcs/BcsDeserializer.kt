@@ -223,6 +223,20 @@ class BcsDeserializer(private val data: ByteArray) {
         if (offset + n > dataLen) throw BcsError.unexpectedEof()
         offset += n
     }
+    
+    /**
+     * Get a slice of the underlying data (for map key validation)
+     * 
+     * @param start start offset (inclusive)
+     * @param end end offset (exclusive)
+     * @return copy of bytes in range
+     */
+    fun getDataSlice(start: Int, end: Int): ByteArray {
+        require(start >= 0 && end <= dataLen && start <= end) {
+            "Invalid slice range: $start to $end (data length: $dataLen)"
+        }
+        return data.copyOfRange(start, end)
+    }
 
     // =========================================================================
     // Container Depth

@@ -612,4 +612,141 @@ void main() {
       expect(ser.toBytes(), equals([1, 42]));
     });
   });
+
+  // ============================================================================
+  // New API Tests (Safety Fixes)
+  // ============================================================================
+
+  group('Serializer Safety', () {
+    test('toBytes returns independent copy', () {
+      final ser = BcsSerializer()..writeU64Int(12345);
+      final bytes1 = ser.toBytes();
+      ser
+        ..clear()
+        ..writeU64Int(67890);
+      final bytes2 = ser.toBytes();
+
+      // bytes1 should still contain 12345, not 67890
+      expect(BcsDeserializer(bytes1).readU64Int(), equals(12345));
+      expect(BcsDeserializer(bytes2).readU64Int(), equals(67890));
+    });
+
+    test('toBytesView is affected by clear', () {
+      final ser = BcsSerializer()..writeU8(42);
+      final view = ser.toBytesView();
+      expect(view[0], equals(42));
+
+      ser
+        ..clear()
+        ..writeU8(99);
+      // View now shows the new data (this is expected behavior)
+      expect(view[0], equals(99));
+    });
+
+    test('writeU64Int rejects negative values', () {
+      expect(
+        () => BcsSerializer().writeU64Int(-1),
+        throwsA(
+          isA<BcsError>().having(
+            (e) => e.type,
+            'type',
+            BcsErrorType.integerOutOfRange,
+          ),
+        ),
+      );
+    });
+  });
+
+  group('Deserializer Safety', () {
+    test('readFixedBytes returns independent copy', () {
+      final data = Uint8List.fromList([1, 2, 3, 4, 5]);
+      final des = BcsDeserializer(data);
+      final bytes = des.readFixedBytes(3);
+
+      // Modify returned bytes
+      bytes[0] = 99;
+
+      // Original data should be unchanged
+      expect(data[0], equals(1));
+    });
+
+    test('readFixedBytesView shares data with input', () {
+      final data = Uint8List.fromList([1, 2, 3, 4, 5]);
+      final des = BcsDeserializer(data);
+      final view = des.readFixedBytesView(3);
+
+      // Modify returned view
+      view[0] = 99;
+
+      // Original data IS changed (expected behavior for view)
+      expect(data[0], equals(99));
+    });
+
+    test('readU64Int round trip', () {
+      final values = [0, 1, 255, 65535, 0x7FFFFFFFFFFFFFFF];
+      for (final value in values) {
+        final bytes = BcsSerializer().writeU64Int(value).toBytes();
+        final result = BcsDeserializer(bytes).readU64Int();
+        expect(result, equals(value));
+      }
+    });
+
+    test('readBytesView returns view', () {
+      final ser = BcsSerializer()
+        ..writeBytes(Uint8List.fromList([1, 2, 3]));
+      final data = ser.toBytes();
+      final des = BcsDeserializer(data);
+      final view = des.readBytesView();
+      expect(view, equals([1, 2, 3]));
+    });
+  });
+
+  group('ULEB128 Thread Safety', () {
+    test('concurrent encode calls produce correct results', () {
+      // Verify that each encode call produces correct independent results
+      final results = <Uint8List>[];
+      for (var i = 0; i < 100; i++) {
+        results.add(Uleb128.encode(i));
+      }
+
+      // Verify all results are correct
+      for (var i = 0; i < 100; i++) {
+        final decoded = Uleb128.decode(results[i]);
+        expect(decoded.value, equals(i));
+      }
+    });
+  });
+
+  group('BigInt Performance Optimization', () {
+    test('u128 round trip with chunked read', () {
+      final value = BigInt.parse('FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', radix: 16);
+      final bytes = BcsSerializer().writeU128(value).toBytes();
+      final result = BcsDeserializer(bytes).readU128();
+      expect(result, equals(value));
+    });
+
+    test('u256 round trip with chunked read', () {
+      final value = BigInt.parse(
+        'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
+        radix: 16,
+      );
+      final bytes = BcsSerializer().writeU256(value).toBytes();
+      final result = BcsDeserializer(bytes).readU256();
+      expect(result, equals(value));
+    });
+
+    test('i128 negative value round trip', () {
+      final value = BigInt.from(-1);
+      final bytes = BcsSerializer().writeI128(value).toBytes();
+      final result = BcsDeserializer(bytes).readI128();
+      expect(result, equals(value));
+    });
+
+    test('i256 min value round trip', () {
+      final value = i256Min;
+      final bytes = BcsSerializer().writeI256(value).toBytes();
+      final result = BcsDeserializer(bytes).readI256();
+      expect(result, equals(value));
+    });
+  });
 }

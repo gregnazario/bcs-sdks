@@ -1,0 +1,402 @@
+name: Release Check
+
+on:
+  push:
+    tags:
+      - '*-v*'
+
+# Cancel in-progress runs on new commits to same tag
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # =============================================================================
+  # DETERMINE WHICH SDK IS BEING RELEASED
+  # =============================================================================
+  
+  detect-sdk:
+    name: Detect SDK
+    runs-on: ubuntu-latest
+    outputs:
+      sdk: ${{ steps.detect.outputs.sdk }}
+      version: ${{ steps.detect.outputs.version }}
+    steps:
+      - name: Parse tag
+        id: detect
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          SDK="${TAG%-v*}"
+          VERSION="${TAG#*-v}"
+          echo "sdk=$SDK" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Detected: SDK=$SDK, VERSION=$VERSION"
+
+  # =============================================================================
+  # SDK-SPECIFIC VALIDATION JOBS
+  # =============================================================================
+
+  validate-python:
+    name: Validate Python
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'python'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+        working-directory: sdks/python
+      - name: Verify version
+        run: |
+          EXPECTED="${{ needs.detect-sdk.outputs.version }}"
+          ACTUAL=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "Version mismatch: tag=$EXPECTED, file=$ACTUAL"
+            exit 1
+          fi
+        working-directory: sdks/python
+      - name: Run tests
+        run: make test
+        working-directory: sdks/python
+      - name: Build package
+        run: pip install build && python -m build
+        working-directory: sdks/python
+
+  validate-typescript:
+    name: Validate TypeScript
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'typescript'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm ci
+        working-directory: sdks/typescript
+      - name: Verify version
+        run: |
+          EXPECTED="${{ needs.detect-sdk.outputs.version }}"
+          ACTUAL=$(node -p "require('./package.json').version")
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "Version mismatch: tag=$EXPECTED, file=$ACTUAL"
+            exit 1
+          fi
+        working-directory: sdks/typescript
+      - name: Run tests
+        run: make test
+        working-directory: sdks/typescript
+      - name: Build package
+        run: npm run build
+        working-directory: sdks/typescript
+
+  validate-rust:
+    name: Validate Rust
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'rust'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify version
+        run: |
+          EXPECTED="${{ needs.detect-sdk.outputs.version }}"
+          ACTUAL=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "Version mismatch: tag=$EXPECTED, file=$ACTUAL"
+            exit 1
+          fi
+        working-directory: sdks/rust
+      - name: Run tests
+        run: make test
+        working-directory: sdks/rust
+      - name: Dry-run publish
+        run: cargo publish --dry-run
+        working-directory: sdks/rust
+
+  validate-java:
+    name: Validate Java
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'java'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Verify version
+        run: |
+          EXPECTED="${{ needs.detect-sdk.outputs.version }}"
+          ACTUAL=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "Version mismatch: tag=$EXPECTED, file=$ACTUAL"
+            exit 1
+          fi
+        working-directory: sdks/java
+      - name: Run tests
+        run: make test
+        working-directory: sdks/java
+
+  validate-kotlin:
+    name: Validate Kotlin
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'kotlin'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v3
+      - name: Verify version
+        run: |
+          EXPECTED="${{ needs.detect-sdk.outputs.version }}"
+          ACTUAL=$(./gradlew properties -q | grep "version:" | awk '{print $2}')
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "Version mismatch: tag=$EXPECTED, file=$ACTUAL"
+            exit 1
+          fi
+        working-directory: sdks/kotlin
+      - name: Run tests
+        run: make test
+        working-directory: sdks/kotlin
+
+  validate-csharp:
+    name: Validate C#
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'csharp'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Run tests
+        run: make test
+        working-directory: sdks/csharp
+      - name: Build package
+        run: dotnet pack -c Release
+        working-directory: sdks/csharp
+
+  validate-go:
+    name: Validate Go
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'go'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Verify module
+        run: go mod verify
+        working-directory: sdks/go
+      - name: Run tests
+        run: make test
+        working-directory: sdks/go
+
+  validate-ruby:
+    name: Validate Ruby
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'ruby'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: sdks/ruby
+      - name: Verify version
+        run: |
+          EXPECTED="${{ needs.detect-sdk.outputs.version }}"
+          ACTUAL=$(ruby -e "require './lib/bcs/version'; puts BCS::VERSION")
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "Version mismatch: tag=$EXPECTED, file=$ACTUAL"
+            exit 1
+          fi
+        working-directory: sdks/ruby
+      - name: Run tests
+        run: make test
+        working-directory: sdks/ruby
+      - name: Build gem
+        run: gem build bcs.gemspec
+        working-directory: sdks/ruby
+
+  validate-swift:
+    name: Validate Swift
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'swift'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: make test
+        working-directory: sdks/swift
+      - name: Build package
+        run: swift build -c release
+        working-directory: sdks/swift
+
+  validate-elixir:
+    name: Validate Elixir
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'elixir'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.16'
+          otp-version: '26'
+      - name: Install dependencies
+        run: mix deps.get
+        working-directory: sdks/elixir
+      - name: Verify version
+        run: |
+          EXPECTED="${{ needs.detect-sdk.outputs.version }}"
+          ACTUAL=$(mix run -e 'IO.puts(Mix.Project.config()[:version])')
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "Version mismatch: tag=$EXPECTED, file=$ACTUAL"
+            exit 1
+          fi
+        working-directory: sdks/elixir
+      - name: Run tests
+        run: make test
+        working-directory: sdks/elixir
+
+  validate-dart:
+    name: Validate Dart
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'dart'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Install dependencies
+        run: dart pub get
+        working-directory: sdks/dart
+      - name: Verify version
+        run: |
+          EXPECTED="${{ needs.detect-sdk.outputs.version }}"
+          ACTUAL=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "Version mismatch: tag=$EXPECTED, file=$ACTUAL"
+            exit 1
+          fi
+        working-directory: sdks/dart
+      - name: Run tests
+        run: make test
+        working-directory: sdks/dart
+
+  validate-cpp:
+    name: Validate C++
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'cpp'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+      - name: Run tests
+        run: make test
+        working-directory: sdks/cpp
+
+  validate-c:
+    name: Validate C
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'c'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+      - name: Run tests
+        run: make test
+        working-directory: sdks/c
+
+  validate-zig:
+    name: Validate Zig
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'zig'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: '0.13.0'
+      - name: Verify version
+        run: |
+          EXPECTED="${{ needs.detect-sdk.outputs.version }}"
+          ACTUAL=$(grep '\.version' build.zig.zon | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "Version mismatch: tag=$EXPECTED, file=$ACTUAL"
+            exit 1
+          fi
+        working-directory: sdks/zig
+      - name: Run tests
+        run: make test
+        working-directory: sdks/zig
+
+  validate-ocaml:
+    name: Validate OCaml
+    needs: detect-sdk
+    if: needs.detect-sdk.outputs.sdk == 'ocaml'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ocaml/setup-ocaml@v2
+        with:
+          ocaml-compiler: '5.1'
+      - name: Install dependencies
+        run: opam install . --deps-only --with-test
+        working-directory: sdks/ocaml
+      - name: Run tests
+        run: make test
+        working-directory: sdks/ocaml
+
+  # =============================================================================
+  # SUMMARY JOB - Reports overall status
+  # =============================================================================
+
+  release-ready:
+    name: Release Ready
+    runs-on: ubuntu-latest
+    needs:
+      - detect-sdk
+      - validate-python
+      - validate-typescript
+      - validate-rust
+      - validate-java
+      - validate-kotlin
+      - validate-csharp
+      - validate-go
+      - validate-ruby
+      - validate-swift
+      - validate-elixir
+      - validate-dart
+      - validate-cpp
+      - validate-c
+      - validate-zig
+      - validate-ocaml
+    if: always()
+    steps:
+      - name: Check validation status
+        run: |
+          SDK="${{ needs.detect-sdk.outputs.sdk }}"
+          VERSION="${{ needs.detect-sdk.outputs.version }}"
+          echo "SDK: $SDK"
+          echo "Version: $VERSION"
+          echo ""
+          echo "Validation complete. Check the publish workflow for deployment status."

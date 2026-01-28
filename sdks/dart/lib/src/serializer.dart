@@ -92,23 +92,32 @@ class BcsSerializer {
     return this;
   }
 
-  /// Write an unsigned 64-bit integer from int (little-endian)
+  /// Write an unsigned 64-bit integer from int (little-endian).
+  ///
+  /// This is an optimized version of [writeU64] for values that fit in a
+  /// native [int]. On the Dart VM, this supports the full u64 range for
+  /// non-negative values. On Dart Web (JavaScript), [int] only has 53 bits
+  /// of precision, so values larger than 2^53-1 may lose precision.
+  ///
+  /// For values that require full 64-bit precision on all platforms,
+  /// use [writeU64] with [BigInt] instead.
+  ///
+  /// Throws [BcsError] if [value] is negative.
   BcsSerializer writeU64Int(int value) {
-    // Optimize: write int directly for small values
-    if (value >= 0) {
-      _ensureCapacity(8);
-      _buffer[_size] = value & 0xFF;
-      _buffer[_size + 1] = (value >> 8) & 0xFF;
-      _buffer[_size + 2] = (value >> 16) & 0xFF;
-      _buffer[_size + 3] = (value >> 24) & 0xFF;
-      _buffer[_size + 4] = (value >> 32) & 0xFF;
-      _buffer[_size + 5] = (value >> 40) & 0xFF;
-      _buffer[_size + 6] = (value >> 48) & 0xFF;
-      _buffer[_size + 7] = (value >> 56) & 0xFF;
-      _size += 8;
-      return this;
+    if (value < 0) {
+      throw BcsError.integerOutOfRange('u64');
     }
-    return writeU64(BigInt.from(value));
+    _ensureCapacity(8);
+    _buffer[_size] = value & 0xFF;
+    _buffer[_size + 1] = (value >> 8) & 0xFF;
+    _buffer[_size + 2] = (value >> 16) & 0xFF;
+    _buffer[_size + 3] = (value >> 24) & 0xFF;
+    _buffer[_size + 4] = (value >> 32) & 0xFF;
+    _buffer[_size + 5] = (value >> 40) & 0xFF;
+    _buffer[_size + 6] = (value >> 48) & 0xFF;
+    _buffer[_size + 7] = (value >> 56) & 0xFF;
+    _size += 8;
+    return this;
   }
 
   /// Write an unsigned 128-bit integer (little-endian)
@@ -297,11 +306,14 @@ class BcsSerializer {
     _checkSequenceLength(map.length);
 
     // Serialize all keys to get their byte representation
+    // Reuse a single serializer for efficiency
     final entries = <(Uint8List, K, V)>[];
+    final keySer = BcsSerializer(64); // Small initial capacity for keys
     for (final entry in map.entries) {
-      final keySer = BcsSerializer();
+      keySer.clear();
       keySerializer(keySer, entry.key);
-      entries.add((keySer.toBytes(), entry.key, entry.value));
+      // Must copy since we reuse the serializer
+      entries.add((keySer.toBytesCopy(), entry.key, entry.value));
     }
 
     // Sort by key bytes (lexicographic)
@@ -355,15 +367,37 @@ class BcsSerializer {
   // OUTPUT
   // ==========================================================================
 
-  /// Get the serialized bytes
+  /// Get the serialized bytes as a copy.
+  ///
+  /// Returns a new [Uint8List] containing a copy of the serialized data.
+  /// This is safe to use even if the serializer is reused via [clear].
+  ///
+  /// For performance-critical code where you won't reuse the serializer,
+  /// consider using [toBytesView] instead.
   Uint8List toBytes() {
+    return Uint8List.fromList(_buffer.sublist(0, _size));
+  }
+
+  /// Get the serialized bytes as a view (zero-copy).
+  ///
+  /// **WARNING:** The returned [Uint8List] is a view into the internal buffer.
+  /// If you call [clear] and reuse this serializer, the previously returned
+  /// view will be corrupted. Only use this method when you're done with the
+  /// serializer or need maximum performance.
+  Uint8List toBytesView() {
     return Uint8List.sublistView(_buffer, 0, _size);
   }
+
+  /// Alias for [toBytes] - returns a copy.
+  Uint8List toBytesCopy() => toBytes();
 
   /// Get the current size of the buffer
   int get size => _size;
 
-  /// Clear the buffer
+  /// Clear the buffer for reuse.
+  ///
+  /// **Note:** Any views returned by [toBytesView] will be invalidated.
+  /// Use [toBytes] or [toBytesCopy] if you need to keep the data.
   void clear() {
     _size = 0;
     _depth = 0;

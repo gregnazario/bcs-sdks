@@ -5,6 +5,8 @@ from __future__ import annotations
 import struct
 from typing import Any, Callable, TypeVar
 
+import struct
+
 from .errors import (
     ExceededContainerDepth,
     ExceededMaxLength,
@@ -45,24 +47,28 @@ class BcsDeserializer:
         >>> d.check_end()  # Verify no remaining bytes
     """
 
-    __slots__ = ("_data", "_offset", "_len", "_max_depth", "_current_depth")
+    __slots__ = ("_data", "_offset", "_len", "_max_depth", "_current_depth", "_max_alloc")
 
     def __init__(
         self,
         data: bytes | bytearray | memoryview,
         max_depth: int = MAX_CONTAINER_DEPTH,
+        max_alloc: int | None = None,
     ) -> None:
         """Initialize a new deserializer.
 
         Args:
             data: Bytes to deserialize from
             max_depth: Maximum container nesting depth (default: 500)
+            max_alloc: Maximum allocation size for vectors/bytes (default: MAX_SEQUENCE_LENGTH).
+                       Set to a smaller value for defense-in-depth against memory exhaustion.
         """
         self._data = memoryview(data) if not isinstance(data, memoryview) else data
         self._offset = 0
         self._len = len(data)
         self._max_depth = max_depth
         self._current_depth = 0
+        self._max_alloc = max_alloc if max_alloc is not None else MAX_SEQUENCE_LENGTH
 
     @property
     def remaining(self) -> int:
@@ -336,10 +342,10 @@ class BcsDeserializer:
             Deserialized bytes
 
         Raises:
-            ExceededMaxLength: If length exceeds MAX_SEQUENCE_LENGTH
+            ExceededMaxLength: If length exceeds max_alloc or MAX_SEQUENCE_LENGTH
         """
         length = self.read_uleb128()
-        if length > MAX_SEQUENCE_LENGTH:
+        if length > self._max_alloc:
             raise ExceededMaxLength(length)
         end = self._offset + length
         if end > self._len:
@@ -355,10 +361,11 @@ class BcsDeserializer:
             Deserialized string
 
         Raises:
+            ExceededMaxLength: If length exceeds max_alloc
             InvalidUtf8: If bytes are not valid UTF-8
         """
         length = self.read_uleb128()
-        if length > MAX_SEQUENCE_LENGTH:
+        if length > self._max_alloc:
             raise ExceededMaxLength(length)
         end = self._offset + length
         if end > self._len:
@@ -458,17 +465,17 @@ class BcsDeserializer:
             List of deserialized values
 
         Raises:
-            ExceededMaxLength: If length exceeds MAX_SEQUENCE_LENGTH
+            ExceededMaxLength: If length exceeds max_alloc
         """
         length = self.read_uleb128()
-        if length > MAX_SEQUENCE_LENGTH:
+        if length > self._max_alloc:
             raise ExceededMaxLength(length)
         return [deserializer(self) for _ in range(length)]
 
     def read_vector_u8(self) -> list[int]:
         """Deserialize a vector of u8 (optimized - returns list of ints)."""
         length = self.read_uleb128()
-        if length > MAX_SEQUENCE_LENGTH:
+        if length > self._max_alloc:
             raise ExceededMaxLength(length)
         end = self._offset + length
         if end > self._len:
@@ -480,17 +487,18 @@ class BcsDeserializer:
     def read_vector_u64(self) -> list[int]:
         """Deserialize a vector of u64 (optimized)."""
         length = self.read_uleb128()
-        if length > MAX_SEQUENCE_LENGTH:
+        if length > self._max_alloc:
             raise ExceededMaxLength(length)
+        # Check available bytes before computing byte_length to prevent overflow
+        available = self._len - self._offset
+        if length > available // 8:
+            raise UnexpectedEof(length * 8, available)
         byte_length = length * 8
         end = self._offset + byte_length
-        if end > self._len:
-            raise UnexpectedEof(byte_length, self._len - self._offset)
 
-        unpack = _STRUCT_U64.unpack
-        data = self._data
-        offset = self._offset
-        result = [unpack(data[offset + i * 8:offset + (i + 1) * 8])[0] for i in range(length)]
+        # Use iter_unpack for better performance on large vectors
+        data = self._data[self._offset:end]
+        result = [v for (v,) in struct.iter_unpack("<Q", data)]
         self._offset = end
         return result
 
@@ -550,11 +558,11 @@ class BcsDeserializer:
             Deserialized dictionary
 
         Raises:
-            ExceededMaxLength: If length exceeds MAX_SEQUENCE_LENGTH
+            ExceededMaxLength: If length exceeds max_alloc
             NonCanonicalMap: If keys are not sorted or contain duplicates
         """
         length = self.read_uleb128()
-        if length > MAX_SEQUENCE_LENGTH:
+        if length > self._max_alloc:
             raise ExceededMaxLength(length)
 
         result: dict[Any, Any] = {}

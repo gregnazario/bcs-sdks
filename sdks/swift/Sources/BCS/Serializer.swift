@@ -143,7 +143,12 @@ public final class BcsSerializer {
     @inlinable
     @discardableResult
     public func writeUleb128(_ value: UInt32) -> BcsSerializer {
-        // Inline ULEB128 encoding to avoid array allocation
+        // Fast path for single-byte values (0-127)
+        if value < 0x80 {
+            buffer.append(UInt8(value))
+            return self
+        }
+        // Multi-byte path
         var remaining = value
         repeat {
             var byte = UInt8(remaining & 0x7F)
@@ -260,6 +265,68 @@ public final class BcsSerializer {
         writeUleb128(index)
     }
 
+    // MARK: - Batch Write Operations
+
+    /// Write a vector of U8 values efficiently
+    @inlinable
+    @discardableResult
+    public func writeU8Vector(_ values: [UInt8]) throws -> BcsSerializer {
+        try checkSequenceLength(values.count)
+        writeUleb128(UInt32(values.count))
+        buffer.append(contentsOf: values)
+        return self
+    }
+
+    /// Write a vector of U16 values efficiently
+    @inlinable
+    @discardableResult
+    public func writeU16Vector(_ values: [UInt16]) throws -> BcsSerializer {
+        try checkSequenceLength(values.count)
+        writeUleb128(UInt32(values.count))
+        buffer.reserveCapacity(buffer.count + values.count * 2)
+        for value in values {
+            buffer.append(UInt8(truncatingIfNeeded: value))
+            buffer.append(UInt8(truncatingIfNeeded: value &>> 8))
+        }
+        return self
+    }
+
+    /// Write a vector of U32 values efficiently
+    @inlinable
+    @discardableResult
+    public func writeU32Vector(_ values: [UInt32]) throws -> BcsSerializer {
+        try checkSequenceLength(values.count)
+        writeUleb128(UInt32(values.count))
+        buffer.reserveCapacity(buffer.count + values.count * 4)
+        for value in values {
+            buffer.append(UInt8(truncatingIfNeeded: value))
+            buffer.append(UInt8(truncatingIfNeeded: value &>> 8))
+            buffer.append(UInt8(truncatingIfNeeded: value &>> 16))
+            buffer.append(UInt8(truncatingIfNeeded: value &>> 24))
+        }
+        return self
+    }
+
+    /// Write a vector of U64 values efficiently
+    @inlinable
+    @discardableResult
+    public func writeU64Vector(_ values: [UInt64]) throws -> BcsSerializer {
+        try checkSequenceLength(values.count)
+        writeUleb128(UInt32(values.count))
+        buffer.reserveCapacity(buffer.count + values.count * 8)
+        for value in values {
+            buffer.append(UInt8(truncatingIfNeeded: value))
+            buffer.append(UInt8(truncatingIfNeeded: value &>> 8))
+            buffer.append(UInt8(truncatingIfNeeded: value &>> 16))
+            buffer.append(UInt8(truncatingIfNeeded: value &>> 24))
+            buffer.append(UInt8(truncatingIfNeeded: value &>> 32))
+            buffer.append(UInt8(truncatingIfNeeded: value &>> 40))
+            buffer.append(UInt8(truncatingIfNeeded: value &>> 48))
+            buffer.append(UInt8(truncatingIfNeeded: value &>> 56))
+        }
+        return self
+    }
+
     // MARK: - Container Depth
 
     /// Enter a struct/enum container (for depth tracking)
@@ -277,7 +344,9 @@ public final class BcsSerializer {
     @inlinable
     @discardableResult
     public func leaveContainer() -> BcsSerializer {
-        depth -= 1
+        if depth > 0 {
+            depth -= 1
+        }
         return self
     }
 
@@ -287,6 +356,12 @@ public final class BcsSerializer {
     @inlinable
     public func toBytes() -> [UInt8] {
         Array(buffer)
+    }
+
+    /// Get direct access to the internal buffer (zero-copy)
+    @inlinable
+    public var bytes: ContiguousArray<UInt8> {
+        buffer
     }
 
     /// Get the current size of the buffer

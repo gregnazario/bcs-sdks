@@ -54,6 +54,7 @@ const INITIAL_CAPACITY = 256;
 export class BcsSerializer {
   private buffer: Uint8Array;
   private size: number = 0;
+  private depth: number = 0;
 
   constructor(initialCapacity: number = INITIAL_CAPACITY) {
     this.buffer = new Uint8Array(initialCapacity);
@@ -366,6 +367,66 @@ export class BcsSerializer {
    */
   writeVariantIndex(index: number): this {
     return this.writeUleb128(index);
+  }
+
+  // ==========================================================================
+  // CONTAINER DEPTH
+  // ==========================================================================
+
+  /**
+   * Enter a struct container for depth tracking.
+   * @throws BcsError if container depth exceeds MAX_CONTAINER_DEPTH (500)
+   */
+  enterStruct(): this {
+    this.enterContainer("struct");
+    return this;
+  }
+
+  /**
+   * Leave a struct container.
+   */
+  leaveStruct(): this {
+    this.leaveContainer();
+    return this;
+  }
+
+  /**
+   * Enter an enum container for depth tracking and write variant index.
+   * @param variantIndex - The enum variant index
+   * @throws BcsError if container depth exceeds MAX_CONTAINER_DEPTH (500)
+   */
+  enterEnum(variantIndex: number): this {
+    this.enterContainer("enum");
+    this.writeVariantIndex(variantIndex);
+    return this;
+  }
+
+  /**
+   * Leave an enum container.
+   */
+  leaveEnum(): this {
+    this.leaveContainer();
+    return this;
+  }
+
+  /**
+   * Get the current container depth.
+   */
+  get containerDepth(): number {
+    return this.depth;
+  }
+
+  private enterContainer(name: string): void {
+    if (this.depth >= MAX_CONTAINER_DEPTH) {
+      throw BcsError.exceededContainerDepth(name);
+    }
+    this.depth++;
+  }
+
+  private leaveContainer(): void {
+    if (this.depth > 0) {
+      this.depth--;
+    }
   }
 
   // ==========================================================================

@@ -100,31 +100,64 @@ fun BcsDeserializer.readStringList(): List<String> = readList { readString() }
 // =============================================================================
 
 /**
- * Read a map with key/value deserializers
+ * Compare two byte arrays lexicographically (as unsigned bytes)
+ * Made internal for access from inline extension functions.
+ */
+@PublishedApi
+internal fun compareBytesUnsigned(a: ByteArray, b: ByteArray): Int {
+    val minLen = minOf(a.size, b.size)
+    for (i in 0 until minLen) {
+        val cmp = (a[i].toInt() and 0xFF) - (b[i].toInt() and 0xFF)
+        if (cmp != 0) return cmp
+    }
+    return a.size - b.size
+}
+
+/**
+ * Read a map with key/value deserializers (validates sorted keys per BCS spec)
+ *
+ * BCS maps MUST have keys sorted by their serialized byte representation.
+ * This function validates that keys are in sorted order and rejects duplicates.
  *
  * @param keyDeserializer function to deserialize keys
  * @param valueDeserializer function to deserialize values
  * @return the deserialized map
+ * @throws BcsError.NonCanonicalMap if keys are not sorted or duplicates exist
  */
 inline fun <K, V> BcsDeserializer.readMap(
     keyDeserializer: BcsDeserializer.() -> K,
     valueDeserializer: BcsDeserializer.() -> V
 ): Map<K, V> {
     val length = readUleb128().toInt()
-    val result = mutableMapOf<K, V>()
+    if (length > BcsConstants.MAX_SEQUENCE_LENGTH) {
+        throw BcsError.exceededMaxLength(length)
+    }
+    
+    val result = linkedMapOf<K, V>()
     var prevKeyBytes: ByteArray? = null
 
     repeat(length) {
-        // Record start position
+        // Record position before reading key
         val keyStart = offset
-
+        
+        // Deserialize the key
         val key = keyDeserializer()
-
-        // Get key bytes for ordering check
+        
+        // Get key bytes for ordering validation
         val keyEnd = offset
-        val keyBytes = ByteArray(keyEnd - keyStart)
-        // We need to re-read the key bytes from the original data
-        // This is a simplification - in practice we'd track this differently
+        val keyBytes = getDataSlice(keyStart, keyEnd)
+
+        // Verify key order (BCS requires sorted keys)
+        prevKeyBytes?.let { prev ->
+            val cmp = compareBytesUnsigned(prev, keyBytes)
+            if (cmp == 0) {
+                throw BcsError.nonCanonicalMap("duplicate key")
+            }
+            if (cmp > 0) {
+                throw BcsError.nonCanonicalMap("keys not sorted")
+            }
+        }
+        prevKeyBytes = keyBytes
 
         // Read value
         val value = valueDeserializer()
@@ -135,17 +168,52 @@ inline fun <K, V> BcsDeserializer.readMap(
 }
 
 /**
- * Read a mutable map with key/value deserializers
+ * Read a mutable map with key/value deserializers (validates sorted keys per BCS spec)
+ *
+ * BCS maps MUST have keys sorted by their serialized byte representation.
+ * This function validates that keys are in sorted order and rejects duplicates.
+ *
+ * @param keyDeserializer function to deserialize keys
+ * @param valueDeserializer function to deserialize values
+ * @return the deserialized mutable map
+ * @throws BcsError.NonCanonicalMap if keys are not sorted or duplicates exist
  */
 inline fun <K, V> BcsDeserializer.readMutableMap(
     keyDeserializer: BcsDeserializer.() -> K,
     valueDeserializer: BcsDeserializer.() -> V
 ): MutableMap<K, V> {
     val length = readUleb128().toInt()
-    val result = mutableMapOf<K, V>()
+    if (length > BcsConstants.MAX_SEQUENCE_LENGTH) {
+        throw BcsError.exceededMaxLength(length)
+    }
+    
+    val result = linkedMapOf<K, V>()
+    var prevKeyBytes: ByteArray? = null
 
     repeat(length) {
+        // Record position before reading key
+        val keyStart = offset
+        
+        // Deserialize the key
         val key = keyDeserializer()
+        
+        // Get key bytes for ordering validation
+        val keyEnd = offset
+        val keyBytes = getDataSlice(keyStart, keyEnd)
+
+        // Verify key order (BCS requires sorted keys)
+        prevKeyBytes?.let { prev ->
+            val cmp = compareBytesUnsigned(prev, keyBytes)
+            if (cmp == 0) {
+                throw BcsError.nonCanonicalMap("duplicate key")
+            }
+            if (cmp > 0) {
+                throw BcsError.nonCanonicalMap("keys not sorted")
+            }
+        }
+        prevKeyBytes = keyBytes
+
+        // Read value
         val value = valueDeserializer()
         result[key] = value
     }

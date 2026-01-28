@@ -33,6 +33,7 @@ public class BcsSerializer
 
     private byte[] _buffer;
     private int _size;
+    private int _depth;
 
     /// <summary>Creates a new BCS serializer with default capacity.</summary>
     public BcsSerializer() : this(DefaultCapacity)
@@ -44,6 +45,7 @@ public class BcsSerializer
     {
         _buffer = new byte[initialCapacity];
         _size = 0;
+        _depth = 0;
     }
 
     #region Boolean
@@ -332,6 +334,62 @@ public class BcsSerializer
     public BcsSerializer WriteMapLength(int length)
     {
         return WriteVectorLength(length);
+    }
+
+    #endregion
+
+    #region Container Depth
+
+    /// <summary>Gets the current container nesting depth.</summary>
+    public int ContainerDepth => _depth;
+
+    /// <summary>Enters a struct container for depth tracking.</summary>
+    /// <exception cref="BcsException">Thrown when container depth exceeds MaxContainerDepth (500).</exception>
+    public BcsSerializer EnterStruct()
+    {
+        EnterContainer("struct");
+        return this;
+    }
+
+    /// <summary>Leaves a struct container.</summary>
+    public BcsSerializer LeaveStruct()
+    {
+        LeaveContainer();
+        return this;
+    }
+
+    /// <summary>Enters an enum container for depth tracking and writes the variant index.</summary>
+    /// <param name="variantIndex">The enum variant index.</param>
+    /// <exception cref="BcsException">Thrown when container depth exceeds MaxContainerDepth (500).</exception>
+    public BcsSerializer EnterEnum(uint variantIndex)
+    {
+        EnterContainer("enum");
+        WriteVariantIndex(variantIndex);
+        return this;
+    }
+
+    /// <summary>Leaves an enum container.</summary>
+    public BcsSerializer LeaveEnum()
+    {
+        LeaveContainer();
+        return this;
+    }
+
+    private void EnterContainer(string containerType)
+    {
+        if (_depth >= MaxContainerDepth)
+        {
+            throw BcsException.ExceededContainerDepth(containerType);
+        }
+        _depth++;
+    }
+
+    private void LeaveContainer()
+    {
+        if (_depth > 0)
+        {
+            _depth--;
+        }
     }
 
     #endregion

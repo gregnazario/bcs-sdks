@@ -65,9 +65,9 @@ class BcsError(
             message ?: "Invalid UTF-8 encoding"
         )
 
-        fun nonCanonicalMap() = BcsError(
+        fun nonCanonicalMap(reason: String = "keys not sorted") = BcsError(
             BcsErrorType.NON_CANONICAL_MAP,
-            "Map keys are not in sorted order"
+            "Non-canonical map: $reason"
         )
 
         fun duplicateMapKey() = BcsError(

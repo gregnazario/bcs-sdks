@@ -197,7 +197,49 @@ module Serializer = struct
     write_uleb128 t len;
     write_bytes_raw t data
 
+  (* UTF-8 validation for serialization *)
+  let is_valid_utf8_string s =
+    let len = String.length s in
+    let rec loop i =
+      if i >= len then true
+      else
+        let b0 = Char.code (String.get s i) in
+        if b0 <= 0x7F then
+          loop (i + 1)
+        else if b0 land 0xE0 = 0xC0 then
+          if i + 1 >= len then false
+          else
+            let b1 = Char.code (String.get s (i + 1)) in
+            if b1 land 0xC0 <> 0x80 then false
+            else if b0 land 0x1E = 0 then false
+            else loop (i + 2)
+        else if b0 land 0xF0 = 0xE0 then
+          if i + 2 >= len then false
+          else
+            let b1 = Char.code (String.get s (i + 1)) in
+            let b2 = Char.code (String.get s (i + 2)) in
+            if b1 land 0xC0 <> 0x80 || b2 land 0xC0 <> 0x80 then false
+            else if b0 = 0xE0 && b1 land 0x20 = 0 then false
+            else if b0 = 0xED && b1 land 0x20 <> 0 then false
+            else loop (i + 3)
+        else if b0 land 0xF8 = 0xF0 then
+          if i + 3 >= len then false
+          else
+            let b1 = Char.code (String.get s (i + 1)) in
+            let b2 = Char.code (String.get s (i + 2)) in
+            let b3 = Char.code (String.get s (i + 3)) in
+            if b1 land 0xC0 <> 0x80 || b2 land 0xC0 <> 0x80 || b3 land 0xC0 <> 0x80 then false
+            else if b0 = 0xF0 && b1 land 0x30 = 0 then false
+            else if b0 > 0xF4 || (b0 = 0xF4 && b1 land 0x30 <> 0) then false
+            else loop (i + 4)
+        else
+          false
+    in
+    loop 0
+
   let write_string t str =
+    if not (is_valid_utf8_string str) then
+      raise (Bcs_error Invalid_utf8);
     let data = Bytes.of_string str in
     write_bytes t data
 
@@ -229,6 +271,41 @@ module Serializer = struct
     write_uleb128 t index
 
   let leave_enum t = leave_container t
+
+  (* Map Support *)
+  let compare_bytes a b =
+    let len_a = Bytes.length a in
+    let len_b = Bytes.length b in
+    let min_len = min len_a len_b in
+    let rec loop i =
+      if i >= min_len then compare len_a len_b
+      else
+        let ca = Bytes.get_uint8 a i in
+        let cb = Bytes.get_uint8 b i in
+        if ca < cb then -1
+        else if ca > cb then 1
+        else loop (i + 1)
+    in
+    loop 0
+
+  let write_map t entries key_serializer value_serializer =
+    (* Sort entries by serialized key bytes *)
+    let serialized_entries = 
+      List.map (fun (k, v) ->
+        let key_ser = create () in
+        key_serializer key_ser k;
+        let key_bytes = to_bytes key_ser in
+        (key_bytes, k, v)
+      ) entries
+    in
+    let sorted = List.sort (fun (a, _, _) (b, _, _) -> compare_bytes a b) serialized_entries in
+    (* Write length and entries *)
+    check_sequence_length (List.length sorted);
+    write_uleb128 t (List.length sorted);
+    List.iter (fun (key_bytes, _, v) ->
+      write_bytes_raw t key_bytes;
+      value_serializer t v
+    ) sorted
 end
 
 (* ============================================================================
@@ -350,12 +427,61 @@ module Deserializer = struct
     check_sequence_length len;
     read_fixed_bytes t len
 
+  (* UTF-8 validation according to RFC 3629 *)
+  let is_valid_utf8 data =
+    let len = Bytes.length data in
+    let rec loop i =
+      if i >= len then true
+      else
+        let b0 = Bytes.get_uint8 data i in
+        if b0 <= 0x7F then
+          (* ASCII: single byte *)
+          loop (i + 1)
+        else if b0 land 0xE0 = 0xC0 then
+          (* 2-byte sequence: 110xxxxx 10xxxxxx *)
+          if i + 1 >= len then false
+          else
+            let b1 = Bytes.get_uint8 data (i + 1) in
+            if b1 land 0xC0 <> 0x80 then false
+            (* Reject overlong encodings: must be >= 0x80 *)
+            else if b0 land 0x1E = 0 then false
+            else loop (i + 2)
+        else if b0 land 0xF0 = 0xE0 then
+          (* 3-byte sequence: 1110xxxx 10xxxxxx 10xxxxxx *)
+          if i + 2 >= len then false
+          else
+            let b1 = Bytes.get_uint8 data (i + 1) in
+            let b2 = Bytes.get_uint8 data (i + 2) in
+            if b1 land 0xC0 <> 0x80 || b2 land 0xC0 <> 0x80 then false
+            (* Reject overlong encodings: must be >= 0x800 *)
+            else if b0 = 0xE0 && b1 land 0x20 = 0 then false
+            (* Reject surrogate pairs U+D800 to U+DFFF *)
+            else if b0 = 0xED && b1 land 0x20 <> 0 then false
+            else loop (i + 3)
+        else if b0 land 0xF8 = 0xF0 then
+          (* 4-byte sequence: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx *)
+          if i + 3 >= len then false
+          else
+            let b1 = Bytes.get_uint8 data (i + 1) in
+            let b2 = Bytes.get_uint8 data (i + 2) in
+            let b3 = Bytes.get_uint8 data (i + 3) in
+            if b1 land 0xC0 <> 0x80 || b2 land 0xC0 <> 0x80 || b3 land 0xC0 <> 0x80 then false
+            (* Reject overlong encodings: must be >= 0x10000 *)
+            else if b0 = 0xF0 && b1 land 0x30 = 0 then false
+            (* Reject code points > U+10FFFF *)
+            else if b0 > 0xF4 || (b0 = 0xF4 && b1 land 0x30 <> 0) then false
+            else loop (i + 4)
+        else
+          (* Invalid leading byte *)
+          false
+    in
+    loop 0
+
   let read_string t =
     let data = read_bytes t in
-    (* Basic UTF-8 validation - check for invalid continuation bytes *)
-    let s = Bytes.to_string data in
-    (* OCaml strings are assumed valid UTF-8 in modern code *)
-    s
+    if not (is_valid_utf8 data) then
+      raise (Bcs_error Invalid_utf8);
+    Bytes.to_string data
 
   (* Composite Types *)
   let read_option t deserializer =
@@ -384,6 +510,46 @@ module Deserializer = struct
     read_uleb128 t
 
   let leave_enum t = leave_container t
+
+  (* Map Support *)
+  let compare_bytes a b =
+    let len_a = Bytes.length a in
+    let len_b = Bytes.length b in
+    let min_len = min len_a len_b in
+    let rec loop i =
+      if i >= min_len then compare len_a len_b
+      else
+        let ca = Bytes.get_uint8 a i in
+        let cb = Bytes.get_uint8 b i in
+        if ca < cb then -1
+        else if ca > cb then 1
+        else loop (i + 1)
+    in
+    loop 0
+
+  let read_map t key_deserializer value_deserializer =
+    let len = read_uleb128 t in
+    check_sequence_length len;
+    let rec loop i prev_key_bytes acc =
+      if i >= len then List.rev acc
+      else begin
+        (* Record position before reading key *)
+        let key_start = t.offset in
+        let key = key_deserializer t in
+        let key_end = t.offset in
+        let key_bytes = Bytes.sub t.data key_start (key_end - key_start) in
+        (* Validate key ordering *)
+        (match prev_key_bytes with
+        | None -> ()
+        | Some prev ->
+            let cmp = compare_bytes prev key_bytes in
+            if cmp = 0 then raise (Bcs_error Duplicate_map_key);
+            if cmp > 0 then raise (Bcs_error Non_canonical_map));
+        let value = value_deserializer t in
+        loop (i + 1) (Some key_bytes) ((key, value) :: acc)
+      end
+    in
+    loop 0 None []
 end
 
 (* ============================================================================

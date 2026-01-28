@@ -44,6 +44,7 @@ module BCS
   @serializer_pool_max_size = 16
 
   class << self
+
     # Acquire a Serializer from the pool (or create new if pool is empty)
     # @param capacity [Integer] Initial buffer capacity
     # @return [Serializer] A serializer instance
@@ -168,5 +169,6 @@ module BCS
     def hex_to_bytes(hex)
       [hex].pack("H*").unpack("C*")
     end
+
   end
 end

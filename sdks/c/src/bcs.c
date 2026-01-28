@@ -360,7 +360,11 @@ BCS_HOT bcs_error_t bcs_write_string(bcs_serializer_t* restrict ser,
                                       const char* restrict str) {
     if (BCS_UNLIKELY(!ser || !str))
         return BCS_ERR_NULL_POINTER;
-    return bcs_write_bytes(ser, (const uint8_t*)str, strlen(str));
+    size_t len = strlen(str);
+    /* Validate UTF-8 on write to prevent serializing invalid data */
+    if (BCS_UNLIKELY(!bcs_is_valid_utf8((const uint8_t*)str, len)))
+        return BCS_ERR_INVALID_UTF8;
+    return bcs_write_bytes(ser, (const uint8_t*)str, len);
 }
 
 bcs_error_t bcs_write_string_n(bcs_serializer_t* restrict ser,
@@ -369,6 +373,9 @@ bcs_error_t bcs_write_string_n(bcs_serializer_t* restrict ser,
         return BCS_ERR_NULL_POINTER;
     if (BCS_UNLIKELY(len > 0 && !str))
         return BCS_ERR_NULL_POINTER;
+    /* Validate UTF-8 on write to prevent serializing invalid data */
+    if (BCS_UNLIKELY(len > 0 && !bcs_is_valid_utf8((const uint8_t*)str, len)))
+        return BCS_ERR_INVALID_UTF8;
     return bcs_write_bytes(ser, (const uint8_t*)str, len);
 }
 
@@ -422,6 +429,10 @@ BCS_HOT bcs_error_t bcs_write_vector_len(bcs_serializer_t* restrict ser, size_t 
     if (BCS_UNLIKELY(len > BCS_MAX_SEQUENCE_LENGTH))
         return BCS_ERR_EXCEEDED_MAX_LENGTH;
     return bcs_write_uleb128(ser, (uint32_t)len);
+}
+
+BCS_HOT bcs_error_t bcs_write_map_len(bcs_serializer_t* restrict ser, size_t len) {
+    return bcs_write_vector_len(ser, len);
 }
 
 /* ============================================================================
@@ -769,6 +780,38 @@ BCS_HOT bcs_error_t bcs_read_option_tag(bcs_deserializer_t* restrict des,
 BCS_HOT bcs_error_t bcs_read_vector_len(bcs_deserializer_t* restrict des,
                                          size_t* restrict len) {
     return bcs_read_bytes_len(des, len);
+}
+
+BCS_HOT bcs_error_t bcs_read_map_len(bcs_deserializer_t* restrict des,
+                                      size_t* restrict len) {
+    return bcs_read_vector_len(des, len);
+}
+
+size_t bcs_deserializer_offset(const bcs_deserializer_t* des) {
+    if (BCS_UNLIKELY(!des))
+        return 0;
+    return des->offset;
+}
+
+const uint8_t* bcs_deserializer_data_at(const bcs_deserializer_t* des, size_t offset) {
+    if (BCS_UNLIKELY(!des || offset > des->size))
+        return NULL;
+    return des->data + offset;
+}
+
+int bcs_compare_bytes(const uint8_t* a, size_t a_len, const uint8_t* b, size_t b_len) {
+    size_t min_len = (a_len < b_len) ? a_len : b_len;
+    for (size_t i = 0; i < min_len; i++) {
+        if (a[i] < b[i])
+            return -1;
+        if (a[i] > b[i])
+            return 1;
+    }
+    if (a_len < b_len)
+        return -1;
+    if (a_len > b_len)
+        return 1;
+    return 0;
 }
 
 /* ============================================================================

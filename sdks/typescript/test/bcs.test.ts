@@ -658,3 +658,95 @@ describe("round-trip", () => {
     expect(result).toEqual(values);
   });
 });
+
+// ==========================================================================
+// CONTAINER DEPTH TESTS
+// ==========================================================================
+
+describe("container depth", () => {
+  it("serializer tracks struct depth", () => {
+    const ser = new BcsSerializer();
+    expect(ser.containerDepth).toBe(0);
+    
+    ser.enterStruct();
+    expect(ser.containerDepth).toBe(1);
+    
+    ser.enterStruct();
+    expect(ser.containerDepth).toBe(2);
+    
+    ser.leaveStruct();
+    expect(ser.containerDepth).toBe(1);
+    
+    ser.leaveStruct();
+    expect(ser.containerDepth).toBe(0);
+  });
+
+  it("serializer tracks enum depth", () => {
+    const ser = new BcsSerializer();
+    expect(ser.containerDepth).toBe(0);
+    
+    ser.enterEnum(0);
+    expect(ser.containerDepth).toBe(1);
+    
+    ser.leaveEnum();
+    expect(ser.containerDepth).toBe(0);
+  });
+
+  it("deserializer tracks struct depth", () => {
+    const des = new BcsDeserializer(new Uint8Array(0));
+    expect(des.containerDepth).toBe(0);
+    
+    des.enterStruct();
+    expect(des.containerDepth).toBe(1);
+    
+    des.enterStruct();
+    expect(des.containerDepth).toBe(2);
+    
+    des.leaveStruct();
+    expect(des.containerDepth).toBe(1);
+    
+    des.leaveStruct();
+    expect(des.containerDepth).toBe(0);
+  });
+
+  it("deserializer enterEnum reads variant index", () => {
+    // Create data with ULEB128-encoded variant index 5
+    const ser = new BcsSerializer();
+    ser.writeVariantIndex(5);
+    const data = ser.toBytes();
+    
+    const des = new BcsDeserializer(data);
+    const variantIndex = des.enterEnum();
+    expect(variantIndex).toBe(5);
+    expect(des.containerDepth).toBe(1);
+    
+    des.leaveEnum();
+    expect(des.containerDepth).toBe(0);
+  });
+
+  it("serializer rejects depth exceeding 500", () => {
+    const ser = new BcsSerializer();
+    
+    // Enter 500 structs (at the limit)
+    for (let i = 0; i < 500; i++) {
+      ser.enterStruct();
+    }
+    expect(ser.containerDepth).toBe(500);
+    
+    // 501st should fail
+    expect(() => ser.enterStruct()).toThrow(BcsError);
+  });
+
+  it("deserializer rejects depth exceeding 500", () => {
+    const des = new BcsDeserializer(new Uint8Array(0));
+    
+    // Enter 500 structs (at the limit)
+    for (let i = 0; i < 500; i++) {
+      des.enterStruct();
+    }
+    expect(des.containerDepth).toBe(500);
+    
+    // 501st should fail
+    expect(() => des.enterStruct()).toThrow(BcsError);
+  });
+});

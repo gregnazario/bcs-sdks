@@ -468,6 +468,10 @@ class BcsSerializer:
         if isinstance(values, (bytes, bytearray)):
             self._buffer += values
         else:
+            # Validate all values are in u8 range before conversion
+            for v in values:
+                if not 0 <= v <= U8_MAX:
+                    raise ValueError(f"u8 value out of range: {v}")
             self._buffer += bytes(values)
         return self
 

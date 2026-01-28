@@ -208,7 +208,8 @@ public enum BCS {
 
         for i in 0..<result.count {
             guard let high = hexDigitValue(utf8[i * 2]),
-                  let low = hexDigitValue(utf8[i * 2 + 1]) else {
+                let low = hexDigitValue(utf8[i * 2 + 1])
+            else {
                 return nil
             }
             result[i] = (high << 4) | low

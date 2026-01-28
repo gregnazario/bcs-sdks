@@ -268,12 +268,74 @@ class BcsTest {
     inner class MapTests {
         @Test
         fun `deserialize u8 map`() {
-            // 3 entries: (1, 10), (2, 20), (3, 30)
+            // 3 entries: (1, 10), (2, 20), (3, 30) - sorted by key
             val data = byteArrayOf(0x03, 0x01, 0x0a, 0x02, 0x14, 0x03, 0x1e)
             val result = bcsDeserialize(data) {
                 readMap({ readU8() }, { readU8() })
             }
             assertEquals(mapOf(1 to 10, 2 to 20, 3 to 30), result)
+        }
+        
+        @Test
+        fun `deserialize empty map`() {
+            val data = byteArrayOf(0x00)
+            val result = bcsDeserialize(data) {
+                readMap({ readU8() }, { readU8() })
+            }
+            assertEquals(emptyMap<Int, Int>(), result)
+        }
+        
+        @Test
+        fun `serialize map with sorted keys`() {
+            // The serializer should sort keys automatically
+            val map = mapOf("cherry" to 3L, "apple" to 1L, "banana" to 2L)
+            val bytes = bcsSerialize {
+                writeStringMap(map) { writeU64(it) }
+            }
+            
+            // Verify by deserializing
+            val result = bcsDeserialize(bytes) {
+                readStringMap { readU64() }
+            }
+            assertEquals(map, result)
+        }
+        
+        @Test
+        fun `reject unsorted keys`() {
+            // 2 entries with keys out of order: (2, 20), (1, 10)
+            val data = byteArrayOf(0x02, 0x02, 0x14, 0x01, 0x0a)
+            val error = assertThrows<BcsError> {
+                bcsDeserialize(data) {
+                    readMap({ readU8() }, { readU8() })
+                }
+            }
+            assertEquals(BcsErrorType.NON_CANONICAL_MAP, error.type)
+            assertTrue(error.message!!.contains("not sorted"))
+        }
+        
+        @Test
+        fun `reject duplicate keys`() {
+            // 2 entries with same key: (1, 10), (1, 20)
+            val data = byteArrayOf(0x02, 0x01, 0x0a, 0x01, 0x14)
+            val error = assertThrows<BcsError> {
+                bcsDeserialize(data) {
+                    readMap({ readU8() }, { readU8() })
+                }
+            }
+            assertEquals(BcsErrorType.NON_CANONICAL_MAP, error.type)
+            assertTrue(error.message!!.contains("duplicate"))
+        }
+        
+        @Test
+        fun `round trip string map`() {
+            val original = mapOf("a" to 1, "b" to 2, "c" to 3)
+            val bytes = bcsSerialize {
+                writeStringMap(original) { writeU8(it) }
+            }
+            val result = bcsDeserialize(bytes) {
+                readStringMap { readU8() }
+            }
+            assertEquals(original, result)
         }
     }
 

@@ -128,6 +128,9 @@ bcs_error_t bcs_write_option_some(bcs_serializer_t* ser);
 /* Vectors - write length, then caller writes elements */
 bcs_error_t bcs_write_vector_len(bcs_serializer_t* ser, size_t len);
 
+/* Maps - write length, then caller writes sorted key/value pairs */
+bcs_error_t bcs_write_map_len(bcs_serializer_t* ser, size_t len);
+
 /* ============================================================================
  * DESERIALIZER
  * ============================================================================ */
@@ -191,6 +194,20 @@ bcs_error_t bcs_read_option_tag(bcs_deserializer_t* des, bool* is_some);
 
 /* Vectors */
 bcs_error_t bcs_read_vector_len(bcs_deserializer_t* des, size_t* len);
+
+/* Maps */
+bcs_error_t bcs_read_map_len(bcs_deserializer_t* des, size_t* len);
+
+/** Get current deserializer offset (for tracking key positions) */
+size_t bcs_deserializer_offset(const bcs_deserializer_t* des);
+
+/** Get pointer to data at offset (for key comparison) */
+const uint8_t* bcs_deserializer_data_at(const bcs_deserializer_t* des, size_t offset);
+
+/** Compare two byte sequences lexicographically.
+ *  Returns: < 0 if a < b, 0 if a == b, > 0 if a > b
+ */
+int bcs_compare_bytes(const uint8_t* a, size_t a_len, const uint8_t* b, size_t b_len);
 
 /* ============================================================================
  * ULEB128 UTILITIES

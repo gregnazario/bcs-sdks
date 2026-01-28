@@ -282,6 +282,40 @@ class TestSignedIntegers:
         assert d.read_i64() == value
         d.check_end()
 
+    @pytest.mark.parametrize(
+        "test_case",
+        TEST_VECTORS["primitives"]["i128"]["valid"],
+        ids=lambda tc: tc["name"],
+    )
+    def test_i128(self, test_case):
+        """Test i128 round-trip."""
+        value = int(test_case["value"])
+        s = BcsSerializer()
+        s.write_i128(value)
+        data = s.to_bytes()
+        assert data == hex_to_bytes(test_case["bcs_hex"])
+
+        d = BcsDeserializer(data)
+        assert d.read_i128() == value
+        d.check_end()
+
+    @pytest.mark.parametrize(
+        "test_case",
+        TEST_VECTORS["primitives"]["i256"]["valid"],
+        ids=lambda tc: tc["name"],
+    )
+    def test_i256(self, test_case):
+        """Test i256 round-trip."""
+        value = int(test_case["value"])
+        s = BcsSerializer()
+        s.write_i256(value)
+        data = s.to_bytes()
+        assert data == hex_to_bytes(test_case["bcs_hex"])
+
+        d = BcsDeserializer(data)
+        assert d.read_i256() == value
+        d.check_end()
+
 
 # =============================================================================
 # ULEB128 TESTS
@@ -593,6 +627,58 @@ class TestErrorCases:
         d = BcsDeserializer(b"")
         with pytest.raises(UnexpectedEof):
             d.read_u8()
+
+    def test_write_vector_u8_validates_values(self):
+        """Test that write_vector_u8 validates values in range."""
+        s = BcsSerializer()
+        # Valid values should work
+        s.write_vector_u8([0, 127, 255])
+
+        # Invalid value should raise
+        s2 = BcsSerializer()
+        with pytest.raises(ValueError, match="u8 value out of range"):
+            s2.write_vector_u8([256])
+
+        s3 = BcsSerializer()
+        with pytest.raises(ValueError, match="u8 value out of range"):
+            s3.write_vector_u8([-1])
+
+    def test_max_alloc_limits_vector(self):
+        """Test that max_alloc limits vector allocation."""
+        from bcs import ExceededMaxLength
+
+        # Create data with length prefix indicating 1000 elements
+        # ULEB128 for 1000 = 0xe8 0x07
+        data = bytes([0xe8, 0x07]) + bytes(1000)
+
+        # Default should allow it
+        d = BcsDeserializer(data)
+        result = d.read_vector_u8()
+        assert len(result) == 1000
+
+        # With max_alloc=100, should reject
+        d2 = BcsDeserializer(data, max_alloc=100)
+        with pytest.raises(ExceededMaxLength):
+            d2.read_vector_u8()
+
+    def test_max_alloc_limits_string(self):
+        """Test that max_alloc limits string allocation."""
+        from bcs import ExceededMaxLength
+
+        # Create a string with 100 bytes
+        s = BcsSerializer()
+        s.write_string("a" * 100)
+        data = s.to_bytes()
+
+        # Default should allow it
+        d = BcsDeserializer(data)
+        result = d.read_string()
+        assert len(result) == 100
+
+        # With max_alloc=50, should reject
+        d2 = BcsDeserializer(data, max_alloc=50)
+        with pytest.raises(ExceededMaxLength):
+            d2.read_string()
 
 
 # =============================================================================

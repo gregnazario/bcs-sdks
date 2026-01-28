@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Callable, TypeVar
 
 # Maximum sequence length (2^31 - 1)
 MAX_SEQUENCE_LENGTH = (1 << 31) - 1
@@ -53,13 +53,13 @@ class BcsStruct:
 
 
 @dataclass
-class StructField(Generic[T]):
+class StructField:
     """Descriptor for a struct field with BCS serialization info."""
 
     name: str
     bcs_type: str
     index: int
-    default: T | None = None
+    default: Any | None = None
 
 
 def bcs_struct(cls: type[T]) -> type[T]:

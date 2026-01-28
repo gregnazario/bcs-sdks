@@ -11,6 +11,7 @@ module BCS
     MAX_BYTES = 5
 
     class << self
+
       # Encode a 32-bit unsigned integer as ULEB128
       # @param value [Integer] The value to encode
       # @return [Array<Integer>] Array of bytes containing the ULEB128 encoding
@@ -32,18 +33,36 @@ module BCS
       end
 
       # Encode a 32-bit unsigned integer as ULEB128 directly into a String buffer
+      # Optimized to avoid intermediate array allocations
       # @param buffer [String] The buffer to append to
       # @param value [Integer] The value to encode
       # @return [String] The buffer (for chaining)
       def encode_into(buffer, value)
         raise Error.integer_out_of_range("uleb128") if value.negative? || value > MAX_VALUE
 
-        loop do
-          byte = value & 0x7F
-          value >>= 7
-          byte |= 0x80 if value != 0
-          buffer << [byte].pack("C")
-          break if value.zero?
+        # Optimized paths for common value ranges (1-4 bytes)
+        if value < 0x4000 # 2 bytes max
+          if value < 0x80
+            buffer << value.chr(Encoding::BINARY)
+          else
+            buffer << ((value & 0x7F) | 0x80).chr(Encoding::BINARY)
+            buffer << (value >> 7).chr(Encoding::BINARY)
+          end
+        elsif value < 0x200000 # 3 bytes
+          buffer << ((value & 0x7F) | 0x80).chr(Encoding::BINARY)
+          buffer << (((value >> 7) & 0x7F) | 0x80).chr(Encoding::BINARY)
+          buffer << (value >> 14).chr(Encoding::BINARY)
+        elsif value < 0x10000000 # 4 bytes
+          buffer << ((value & 0x7F) | 0x80).chr(Encoding::BINARY)
+          buffer << (((value >> 7) & 0x7F) | 0x80).chr(Encoding::BINARY)
+          buffer << (((value >> 14) & 0x7F) | 0x80).chr(Encoding::BINARY)
+          buffer << (value >> 21).chr(Encoding::BINARY)
+        else # 5 bytes (max for u32)
+          buffer << ((value & 0x7F) | 0x80).chr(Encoding::BINARY)
+          buffer << (((value >> 7) & 0x7F) | 0x80).chr(Encoding::BINARY)
+          buffer << (((value >> 14) & 0x7F) | 0x80).chr(Encoding::BINARY)
+          buffer << (((value >> 21) & 0x7F) | 0x80).chr(Encoding::BINARY)
+          buffer << (value >> 28).chr(Encoding::BINARY)
         end
         buffer
       end
@@ -112,6 +131,7 @@ module BCS
 
         5
       end
+
     end
   end
 end

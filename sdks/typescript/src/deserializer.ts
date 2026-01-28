@@ -30,12 +30,16 @@ const MASK_64 = 1n << 64n;
 const MASK_128 = 1n << 128n;
 const MASK_256 = 1n << 256n;
 
+// Container depth limit
+const MAX_CONTAINER_DEPTH = 500;
+
 /**
  * BCS Deserializer class.
  */
 export class BcsDeserializer {
   private data: Uint8Array;
   private offset: number = 0;
+  private depth: number = 0;
 
   /**
    * Create a new deserializer.
@@ -300,6 +304,65 @@ export class BcsDeserializer {
    */
   readVariantIndex(): number {
     return this.readUleb128();
+  }
+
+  // ==========================================================================
+  // CONTAINER DEPTH
+  // ==========================================================================
+
+  /**
+   * Enter a struct container for depth tracking.
+   * @throws BcsError if container depth exceeds MAX_CONTAINER_DEPTH (500)
+   */
+  enterStruct(): this {
+    this.enterContainer("struct");
+    return this;
+  }
+
+  /**
+   * Leave a struct container.
+   */
+  leaveStruct(): this {
+    this.leaveContainer();
+    return this;
+  }
+
+  /**
+   * Enter an enum container for depth tracking and read variant index.
+   * @returns The enum variant index
+   * @throws BcsError if container depth exceeds MAX_CONTAINER_DEPTH (500)
+   */
+  enterEnum(): number {
+    this.enterContainer("enum");
+    return this.readVariantIndex();
+  }
+
+  /**
+   * Leave an enum container.
+   */
+  leaveEnum(): this {
+    this.leaveContainer();
+    return this;
+  }
+
+  /**
+   * Get the current container depth.
+   */
+  get containerDepth(): number {
+    return this.depth;
+  }
+
+  private enterContainer(name: string): void {
+    if (this.depth >= MAX_CONTAINER_DEPTH) {
+      throw BcsError.exceededContainerDepth(name);
+    }
+    this.depth++;
+  }
+
+  private leaveContainer(): void {
+    if (this.depth > 0) {
+      this.depth--;
+    }
   }
 
   // ==========================================================================

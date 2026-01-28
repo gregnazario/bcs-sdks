@@ -29,6 +29,7 @@ func initBigConstants() {
 type Deserializer struct {
 	data   []byte
 	offset int
+	depth  int
 }
 
 // deserializerPool provides reusable Deserializer instances.
@@ -331,6 +332,54 @@ func (d *Deserializer) ReadVectorLen() (uint32, error) {
 // ReadVariantIndex reads an enum variant index (ULEB128).
 func (d *Deserializer) ReadVariantIndex() (uint32, error) {
 	return d.ReadULEB128()
+}
+
+// ==========================================================================
+// CONTAINER DEPTH
+// ==========================================================================
+
+// ContainerDepth returns the current container nesting depth.
+func (d *Deserializer) ContainerDepth() int {
+	return d.depth
+}
+
+// EnterStruct enters a struct container for depth tracking.
+// Returns an error if container depth exceeds MaxContainerDepth (500).
+func (d *Deserializer) EnterStruct() error {
+	return d.enterContainer("struct")
+}
+
+// LeaveStruct leaves a struct container.
+func (d *Deserializer) LeaveStruct() {
+	d.leaveContainer()
+}
+
+// EnterEnum enters an enum container for depth tracking and reads the variant index.
+// Returns the variant index and an error if container depth exceeds MaxContainerDepth (500).
+func (d *Deserializer) EnterEnum() (uint32, error) {
+	if err := d.enterContainer("enum"); err != nil {
+		return 0, err
+	}
+	return d.ReadVariantIndex()
+}
+
+// LeaveEnum leaves an enum container.
+func (d *Deserializer) LeaveEnum() {
+	d.leaveContainer()
+}
+
+func (d *Deserializer) enterContainer(containerType string) error {
+	if d.depth >= MaxContainerDepth {
+		return NewExceededContainerDepth(containerType)
+	}
+	d.depth++
+	return nil
+}
+
+func (d *Deserializer) leaveContainer() {
+	if d.depth > 0 {
+		d.depth--
+	}
 }
 
 // ==========================================================================

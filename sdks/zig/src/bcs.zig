@@ -427,6 +427,15 @@ pub const Serializer = struct {
     pub fn leaveEnum(self: *Self) void {
         self.leaveContainer();
     }
+
+    // --------------------------------------------------------------------
+    // Map Support
+    // --------------------------------------------------------------------
+
+    /// Write a map length (same as vector length)
+    pub fn writeMapLen(self: *Self, len: usize) Error!void {
+        try self.writeVectorLen(len);
+    }
 };
 
 // ============================================================================
@@ -705,6 +714,37 @@ pub const Deserializer = struct {
 
     pub fn leaveEnum(self: *Self) void {
         self.leaveContainer();
+    }
+
+    // --------------------------------------------------------------------
+    // Map Support
+    // --------------------------------------------------------------------
+
+    /// Read map length (same as vector length)
+    pub fn readMapLen(self: *Self) Error!u32 {
+        return self.readVectorLen();
+    }
+
+    /// Get current offset for key comparison
+    pub fn getOffset(self: *const Self) usize {
+        return self.offset;
+    }
+
+    /// Get a slice of data for key comparison
+    pub fn getSlice(self: *const Self, start: usize, end: usize) []const u8 {
+        return self.data[start..end];
+    }
+
+    /// Compare two byte slices lexicographically
+    pub fn compareBytes(a: []const u8, b: []const u8) std.math.Order {
+        const min_len = @min(a.len, b.len);
+        for (0..min_len) |i| {
+            if (a[i] < b[i]) return .lt;
+            if (a[i] > b[i]) return .gt;
+        }
+        if (a.len < b.len) return .lt;
+        if (a.len > b.len) return .gt;
+        return .eq;
     }
 };
 

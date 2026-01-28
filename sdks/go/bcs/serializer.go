@@ -33,7 +33,8 @@ func initSerConstants() {
 
 // Serializer provides methods for BCS serialization.
 type Serializer struct {
-	buf bytes.Buffer
+	buf   bytes.Buffer
+	depth int
 }
 
 // serializerPool provides reusable Serializer instances.
@@ -345,6 +346,55 @@ func (s *Serializer) WriteVectorLen(length int) *Serializer {
 // WriteVariantIndex writes an enum variant index (ULEB128).
 func (s *Serializer) WriteVariantIndex(index uint32) *Serializer {
 	return s.WriteULEB128(index)
+}
+
+// ==========================================================================
+// CONTAINER DEPTH
+// ==========================================================================
+
+// ContainerDepth returns the current container nesting depth.
+func (s *Serializer) ContainerDepth() int {
+	return s.depth
+}
+
+// EnterStruct enters a struct container for depth tracking.
+// Panics if container depth exceeds MaxContainerDepth (500).
+func (s *Serializer) EnterStruct() *Serializer {
+	s.enterContainer("struct")
+	return s
+}
+
+// LeaveStruct leaves a struct container.
+func (s *Serializer) LeaveStruct() *Serializer {
+	s.leaveContainer()
+	return s
+}
+
+// EnterEnum enters an enum container for depth tracking and writes the variant index.
+// Panics if container depth exceeds MaxContainerDepth (500).
+func (s *Serializer) EnterEnum(variantIndex uint32) *Serializer {
+	s.enterContainer("enum")
+	s.WriteVariantIndex(variantIndex)
+	return s
+}
+
+// LeaveEnum leaves an enum container.
+func (s *Serializer) LeaveEnum() *Serializer {
+	s.leaveContainer()
+	return s
+}
+
+func (s *Serializer) enterContainer(containerType string) {
+	if s.depth >= MaxContainerDepth {
+		panic(NewExceededContainerDepth(containerType))
+	}
+	s.depth++
+}
+
+func (s *Serializer) leaveContainer() {
+	if s.depth > 0 {
+		s.depth--
+	}
 }
 
 // ==========================================================================

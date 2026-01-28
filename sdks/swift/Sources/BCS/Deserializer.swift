@@ -67,7 +67,8 @@ public final class BcsDeserializer {
         guard offset &+ 4 <= data.count else {
             throw BcsError.unexpectedEof()
         }
-        let value = UInt32(data[offset])
+        let value =
+            UInt32(data[offset])
             | (UInt32(data[offset &+ 1]) &<< 8)
             | (UInt32(data[offset &+ 2]) &<< 16)
             | (UInt32(data[offset &+ 3]) &<< 24)
@@ -81,7 +82,8 @@ public final class BcsDeserializer {
         guard offset &+ 8 <= data.count else {
             throw BcsError.unexpectedEof()
         }
-        let value = UInt64(data[offset])
+        let value =
+            UInt64(data[offset])
             | (UInt64(data[offset &+ 1]) &<< 8)
             | (UInt64(data[offset &+ 2]) &<< 16)
             | (UInt64(data[offset &+ 3]) &<< 24)
@@ -148,11 +150,23 @@ public final class BcsDeserializer {
     /// Read a ULEB128-encoded value
     @inlinable
     public func readUleb128() throws -> UInt32 {
-        // Inline ULEB128 decoding for performance
-        var value: UInt32 = 0
-        var shift: UInt32 = 0
+        guard offset < data.count else {
+            throw BcsError.unexpectedEof()
+        }
 
-        for i in 0..<5 {
+        // Fast path for single-byte values (0-127)
+        let first = data[offset]
+        if first < 0x80 {
+            offset &+= 1
+            return UInt32(first)
+        }
+
+        // Multi-byte path
+        var value: UInt32 = UInt32(first & 0x7F)
+        var shift: UInt32 = 7
+        offset &+= 1
+
+        for i in 1..<5 {
             guard offset < data.count else {
                 throw BcsError.unexpectedEof()
             }
@@ -166,7 +180,7 @@ public final class BcsDeserializer {
             // Check if this is the last byte (high bit not set)
             if (byte & 0x80) == 0 {
                 // Check for non-canonical encoding (trailing zeros)
-                if shift > 0 && digit == 0 {
+                if digit == 0 {
                     throw BcsError.nonCanonicalUleb128()
                 }
 
@@ -316,7 +330,9 @@ public final class BcsDeserializer {
     @inlinable
     @discardableResult
     public func leaveContainer() -> BcsDeserializer {
-        depth &-= 1
+        if depth > 0 {
+            depth -= 1
+        }
         return self
     }
 
@@ -348,6 +364,116 @@ public final class BcsDeserializer {
         offset < data.count
     }
 
+    /// Peek at the next byte without consuming it
+    @inlinable
+    public func peek() throws -> UInt8 {
+        guard offset < data.count else {
+            throw BcsError.unexpectedEof()
+        }
+        return data[offset]
+    }
+
+    /// Skip n bytes
+    @inlinable
+    @discardableResult
+    public func skip(_ n: Int) throws -> BcsDeserializer {
+        guard offset &+ n <= data.count else {
+            throw BcsError.unexpectedEof()
+        }
+        offset &+= n
+        return self
+    }
+
+    /// Read fixed-length bytes as a slice (zero-copy view)
+    @inlinable
+    public func readFixedBytesSlice(_ length: Int) throws -> ArraySlice<UInt8> {
+        guard offset &+ length <= data.count else {
+            throw BcsError.unexpectedEof()
+        }
+        let result = data[offset..<(offset &+ length)]
+        offset &+= length
+        return result
+    }
+
+    // MARK: - Batch Read Operations
+
+    /// Read a vector of U8 values efficiently
+    @inlinable
+    public func readU8Vector() throws -> [UInt8] {
+        let length = Int(try readUleb128())
+        try checkSequenceLength(length)
+        return try readFixedBytes(length)
+    }
+
+    /// Read a vector of U16 values efficiently
+    @inlinable
+    public func readU16Vector() throws -> [UInt16] {
+        let length = Int(try readUleb128())
+        try checkSequenceLength(length)
+        let byteCount = length * 2
+        guard offset &+ byteCount <= data.count else {
+            throw BcsError.unexpectedEof()
+        }
+        var result = [UInt16]()
+        result.reserveCapacity(length)
+        for _ in 0..<length {
+            let value = UInt16(data[offset]) | (UInt16(data[offset &+ 1]) &<< 8)
+            offset &+= 2
+            result.append(value)
+        }
+        return result
+    }
+
+    /// Read a vector of U32 values efficiently
+    @inlinable
+    public func readU32Vector() throws -> [UInt32] {
+        let length = Int(try readUleb128())
+        try checkSequenceLength(length)
+        let byteCount = length * 4
+        guard offset &+ byteCount <= data.count else {
+            throw BcsError.unexpectedEof()
+        }
+        var result = [UInt32]()
+        result.reserveCapacity(length)
+        for _ in 0..<length {
+            let value =
+                UInt32(data[offset])
+                | (UInt32(data[offset &+ 1]) &<< 8)
+                | (UInt32(data[offset &+ 2]) &<< 16)
+                | (UInt32(data[offset &+ 3]) &<< 24)
+            offset &+= 4
+            result.append(value)
+        }
+        return result
+    }
+
+    /// Read a vector of U64 values efficiently
+    @inlinable
+    public func readU64Vector() throws -> [UInt64] {
+        let length = Int(try readUleb128())
+        try checkSequenceLength(length)
+        let byteCount = length * 8
+        guard offset &+ byteCount <= data.count else {
+            throw BcsError.unexpectedEof()
+        }
+        var result = [UInt64]()
+        result.reserveCapacity(length)
+        for _ in 0..<length {
+            let value =
+                UInt64(data[offset])
+                | (UInt64(data[offset &+ 1]) &<< 8)
+                | (UInt64(data[offset &+ 2]) &<< 16)
+                | (UInt64(data[offset &+ 3]) &<< 24)
+                | (UInt64(data[offset &+ 4]) &<< 32)
+                | (UInt64(data[offset &+ 5]) &<< 40)
+                | (UInt64(data[offset &+ 6]) &<< 48)
+                | (UInt64(data[offset &+ 7]) &<< 56)
+            offset &+= 8
+            result.append(value)
+        }
+        return result
+    }
+
     // MARK: - Private
 
     @usableFromInline
@@ -357,4 +483,3 @@ public final class BcsDeserializer {
         }
     }
 }
-

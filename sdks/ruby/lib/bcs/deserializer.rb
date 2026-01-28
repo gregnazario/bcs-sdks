@@ -4,6 +4,7 @@ module BCS
   # BCS Deserializer - Manual deserialization API
   # Optimized to use String with binary encoding and native unpack operations
   class Deserializer
+
     # Pre-computed sign bit and modulus constants for signed integers
     SIGN_BIT_128 = 1 << 127
     MODULUS_128 = 1 << 128
@@ -44,41 +45,46 @@ module BCS
     end
 
     # Read an unsigned 16-bit integer (little-endian)
+    # Optimized using unpack with offset specifier to avoid string slice allocation
     def read_u16
       check_remaining(2)
-      value = @data.byteslice(@offset, 2).unpack1("v")
+      value = @data.unpack1("@#{@offset}v")
       @offset += 2
       value
     end
 
     # Read an unsigned 32-bit integer (little-endian)
+    # Optimized using unpack with offset specifier to avoid string slice allocation
     def read_u32
       check_remaining(4)
-      value = @data.byteslice(@offset, 4).unpack1("V")
+      value = @data.unpack1("@#{@offset}V")
       @offset += 4
       value
     end
 
     # Read an unsigned 64-bit integer (little-endian)
+    # Optimized using unpack with offset specifier to avoid string slice allocation
     def read_u64
       check_remaining(8)
-      value = @data.byteslice(@offset, 8).unpack1("Q<")
+      value = @data.unpack1("@#{@offset}Q<")
       @offset += 8
       value
     end
 
     # Read an unsigned 128-bit integer (little-endian)
+    # Optimized using unpack with offset specifier to avoid string slice allocation
     def read_u128
       check_remaining(16)
-      low, high = @data.byteslice(@offset, 16).unpack("Q<Q<")
+      low, high = @data.unpack("@#{@offset}Q<Q<")
       @offset += 16
       low | (high << 64)
     end
 
     # Read an unsigned 256-bit integer (little-endian)
+    # Optimized using unpack with offset specifier to avoid string slice allocation
     def read_u256
       check_remaining(32)
-      parts = @data.byteslice(@offset, 32).unpack("Q<Q<Q<Q<")
+      parts = @data.unpack("@#{@offset}Q<Q<Q<Q<")
       @offset += 32
       parts[0] | (parts[1] << 64) | (parts[2] << 128) | (parts[3] << 192)
     end
@@ -88,33 +94,37 @@ module BCS
     # ========================================================================
 
     # Read a signed 8-bit integer
+    # Optimized using unpack with offset specifier to avoid string slice allocation
     def read_i8
       check_remaining(1)
-      value = @data.byteslice(@offset, 1).unpack1("c")
+      value = @data.unpack1("@#{@offset}c")
       @offset += 1
       value
     end
 
     # Read a signed 16-bit integer (little-endian)
+    # Optimized using unpack with offset specifier to avoid string slice allocation
     def read_i16
       check_remaining(2)
-      value = @data.byteslice(@offset, 2).unpack1("s<")
+      value = @data.unpack1("@#{@offset}s<")
       @offset += 2
       value
     end
 
     # Read a signed 32-bit integer (little-endian)
+    # Optimized using unpack with offset specifier to avoid string slice allocation
     def read_i32
       check_remaining(4)
-      value = @data.byteslice(@offset, 4).unpack1("l<")
+      value = @data.unpack1("@#{@offset}l<")
       @offset += 4
       value
     end
 
     # Read a signed 64-bit integer (little-endian)
+    # Optimized using unpack with offset specifier to avoid string slice allocation
     def read_i64
       check_remaining(8)
-      value = @data.byteslice(@offset, 8).unpack1("q<")
+      value = @data.unpack1("@#{@offset}q<")
       @offset += 8
       value
     end
@@ -251,14 +261,21 @@ module BCS
       read_fixed_bytes_as_string(length)
     end
 
+    # Maximum element counts for batch operations to prevent overflow
+    # These ensure byte_length = length * element_size won't overflow
+    MAX_U16_ARRAY_LENGTH = MAX_SEQUENCE_LENGTH / 2
+    MAX_U32_ARRAY_LENGTH = MAX_SEQUENCE_LENGTH / 4
+    MAX_U64_ARRAY_LENGTH = MAX_SEQUENCE_LENGTH / 8
+
     # Read a vector of u16 values (optimized batch operation)
     # @return [Array<Integer>] The array of u16 values
     def read_u16_array
       length = read_uleb128
-      check_sequence_length(length)
+      raise Error.exceeded_max_length(length) if length > MAX_U16_ARRAY_LENGTH
+
       byte_length = length * 2
       check_remaining(byte_length)
-      result = @data.byteslice(@offset, byte_length).unpack("v*")
+      result = @data.unpack("@#{@offset}v#{length}")
       @offset += byte_length
       result
     end
@@ -267,10 +284,11 @@ module BCS
     # @return [Array<Integer>] The array of u32 values
     def read_u32_array
       length = read_uleb128
-      check_sequence_length(length)
+      raise Error.exceeded_max_length(length) if length > MAX_U32_ARRAY_LENGTH
+
       byte_length = length * 4
       check_remaining(byte_length)
-      result = @data.byteslice(@offset, byte_length).unpack("V*")
+      result = @data.unpack("@#{@offset}V#{length}")
       @offset += byte_length
       result
     end
@@ -279,10 +297,11 @@ module BCS
     # @return [Array<Integer>] The array of u64 values
     def read_u64_array
       length = read_uleb128
-      check_sequence_length(length)
+      raise Error.exceeded_max_length(length) if length > MAX_U64_ARRAY_LENGTH
+
       byte_length = length * 8
       check_remaining(byte_length)
-      result = @data.byteslice(@offset, byte_length).unpack("Q<*")
+      result = @data.unpack("@#{@offset}Q<#{length}")
       @offset += byte_length
       result
     end
@@ -411,5 +430,6 @@ module BCS
     def leave_container
       @depth -= 1 if @depth.positive?
     end
+
   end
 end
