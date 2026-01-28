@@ -103,6 +103,9 @@ module Serializer : sig
   val write_option : t -> 'a option -> (t -> 'a -> unit) -> unit
   val write_list : t -> 'a list -> (t -> 'a -> unit) -> unit
   val write_array : t -> 'a array -> (t -> 'a -> unit) -> unit
+  val write_map : t -> ('k * 'v) list -> (t -> 'k -> unit) -> (t -> 'v -> unit) -> unit
+  (** [write_map t entries key_serializer value_serializer] serializes a map.
+      Keys are automatically sorted by their serialized byte representation. *)
 
   (** {2 Container Depth} *)
 
@@ -171,6 +174,9 @@ module Deserializer : sig
   val read_option : t -> (t -> 'a) -> 'a option
   val read_list : t -> (t -> 'a) -> 'a list
   val read_array : t -> (t -> 'a) -> 'a array
+  val read_map : t -> (t -> 'k) -> (t -> 'v) -> ('k * 'v) list
+  (** [read_map t key_deserializer value_deserializer] deserializes a map.
+      Validates that keys are sorted and rejects duplicates. *)
 
   (** {2 Container Depth} *)
 

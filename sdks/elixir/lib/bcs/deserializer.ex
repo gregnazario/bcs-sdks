@@ -22,12 +22,7 @@ defmodule Bcs.Deserializer do
   alias Bcs.{Error, Uleb128}
 
   # Compile-time optimizations for hot path functions
-  @compile {:inline,
-            read_u8: 1,
-            read_u16: 1,
-            read_u32: 1,
-            read_u64: 1,
-            read_bool: 1}
+  @compile {:inline, read_u8: 1, read_u16: 1, read_u32: 1, read_u64: 1, read_bool: 1}
 
   # Constants
   @max_sequence_length (1 <<< 31) - 1

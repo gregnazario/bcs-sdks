@@ -649,7 +649,7 @@ class TestErrorCases:
 
         # Create data with length prefix indicating 1000 elements
         # ULEB128 for 1000 = 0xe8 0x07
-        data = bytes([0xe8, 0x07]) + bytes(1000)
+        data = bytes([0xE8, 0x07]) + bytes(1000)
 
         # Default should allow it
         d = BcsDeserializer(data)

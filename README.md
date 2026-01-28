@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/bcs-sdks/bcs-sdks/actions/workflows/ci.yml/badge.svg)](https://github.com/bcs-sdks/bcs-sdks/actions/workflows/ci.yml)
 
-Binary Canonical Serialization (BCS) implementations across 24+ programming languages.
+Binary Canonical Serialization (BCS) implementations across 15 programming languages.
 
 ## What is BCS?
 
@@ -20,14 +20,26 @@ See [spec/BCS.md](spec/BCS.md) for the formal specification using RFC 2119 langu
 
 ## Available SDKs
 
-| Language | Package | Status |
-|----------|---------|--------|
-| [Python](sdks/python) | `pip install bcs` | In Progress |
-| [Elixir](sdks/elixir) | `{:bcs, "~> 1.0"}` | Planned |
-| [Java](sdks/java) | Maven Central | Planned |
-| [C#](sdks/csharp) | NuGet | Planned |
-| [C++](sdks/cpp) | Header-only | Planned |
-| PHP, Swift, Ruby, C, Dart, Lua, Perl, Groovy, Erlang, Lisp | Various | Planned |
+| Language | Directory | Tests | Status |
+|----------|-----------|-------|--------|
+| [C](sdks/c) | `sdks/c` | ✅ Pass | Complete |
+| [C++](sdks/cpp) | `sdks/cpp` | ✅ 28 Pass | Complete |
+| [C#](sdks/csharp) | `sdks/csharp` | ✅ 35 Pass | Complete |
+| [Dart](sdks/dart) | `sdks/dart` | ✅ 62 Pass | Complete |
+| [Elixir](sdks/elixir) | `sdks/elixir` | ✅ 218 Pass | Complete |
+| [Go](sdks/go) | `sdks/go` | ✅ Pass | Complete |
+| [Java](sdks/java) | `sdks/java` | ✅ 52 Pass | Complete |
+| [Kotlin](sdks/kotlin) | `sdks/kotlin` | ✅ Pass | Complete |
+| [OCaml](sdks/ocaml) | `sdks/ocaml` | ✅ 39 Pass | Complete |
+| [Python](sdks/python) | `sdks/python` | ✅ 150 Pass | Complete |
+| [Ruby](sdks/ruby) | `sdks/ruby` | ✅ 53 Pass | Complete |
+| [Rust](sdks/rust) | `sdks/rust` | ✅ 58 Pass | Complete |
+| [Swift](sdks/swift) | `sdks/swift` | ✅ 68 Pass | Complete |
+| [TypeScript](sdks/typescript) | `sdks/typescript` | ✅ 48 Pass | Complete |
+| [Zig](sdks/zig) | `sdks/zig` | ✅ Pass | Complete |
+
+See [SDK_AUDIT_REPORT.md](SDK_AUDIT_REPORT.md) for detailed security and functionality analysis.
+See [DIFFERENCES.md](DIFFERENCES.md) for implementation differences across languages.
 
 ## Two-Tier API Design
 
@@ -98,10 +110,22 @@ let data = bcs::to_bytes(&transfer)?;
 # Run all SDK tests
 make test
 
-# Run specific SDK
-make test-python
-make test-typescript
-make lint-elixir
+# Run specific SDK tests
+make test-python      # 150 tests
+make test-typescript  # 48 tests
+make test-rust        # 58 tests
+make test-go          # All tests
+make test-java        # 52 tests
+make test-kotlin      # All tests
+make test-cpp         # 28 tests
+make test-swift       # 68 tests
+make test-c           # All tests
+make test-ruby        # 53 tests
+make test-dart        # 62 tests
+make test-elixir      # 218 tests
+make test-csharp      # 35 tests
+make test-zig         # All tests
+make test-ocaml       # 39 tests
 
 # Format all code
 make format
@@ -115,6 +139,8 @@ make format-check
 ```bash
 cd sdks/python && make test
 cd sdks/typescript && npm test
+cd sdks/rust && cargo test
+cd sdks/go && go test ./...
 cd sdks/elixir && mix test
 ```
 

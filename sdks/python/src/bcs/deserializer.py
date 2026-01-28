@@ -5,8 +5,6 @@ from __future__ import annotations
 import struct
 from typing import Any, Callable, TypeVar
 
-import struct
-
 from .errors import (
     ExceededContainerDepth,
     ExceededMaxLength,
@@ -146,7 +144,7 @@ class BcsDeserializer:
         end = self._offset + 2
         if end > self._len:
             raise UnexpectedEof(2, self._len - self._offset)
-        value = _STRUCT_U16.unpack(self._data[self._offset:end])[0]
+        value = _STRUCT_U16.unpack(self._data[self._offset : end])[0]
         self._offset = end
         return value
 
@@ -159,7 +157,7 @@ class BcsDeserializer:
         end = self._offset + 4
         if end > self._len:
             raise UnexpectedEof(4, self._len - self._offset)
-        value = _STRUCT_U32.unpack(self._data[self._offset:end])[0]
+        value = _STRUCT_U32.unpack(self._data[self._offset : end])[0]
         self._offset = end
         return value
 
@@ -172,7 +170,7 @@ class BcsDeserializer:
         end = self._offset + 8
         if end > self._len:
             raise UnexpectedEof(8, self._len - self._offset)
-        value = _STRUCT_U64.unpack(self._data[self._offset:end])[0]
+        value = _STRUCT_U64.unpack(self._data[self._offset : end])[0]
         self._offset = end
         return value
 
@@ -185,7 +183,7 @@ class BcsDeserializer:
         end = self._offset + 16
         if end > self._len:
             raise UnexpectedEof(16, self._len - self._offset)
-        value = int.from_bytes(self._data[self._offset:end], "little")
+        value = int.from_bytes(self._data[self._offset : end], "little")
         self._offset = end
         return value
 
@@ -198,7 +196,7 @@ class BcsDeserializer:
         end = self._offset + 32
         if end > self._len:
             raise UnexpectedEof(32, self._len - self._offset)
-        value = int.from_bytes(self._data[self._offset:end], "little")
+        value = int.from_bytes(self._data[self._offset : end], "little")
         self._offset = end
         return value
 
@@ -214,7 +212,7 @@ class BcsDeserializer:
         """
         if self._offset >= self._len:
             raise UnexpectedEof(1, 0)
-        value = _STRUCT_I8.unpack(self._data[self._offset:self._offset + 1])[0]
+        value = _STRUCT_I8.unpack(self._data[self._offset : self._offset + 1])[0]
         self._offset += 1
         return value
 
@@ -227,7 +225,7 @@ class BcsDeserializer:
         end = self._offset + 2
         if end > self._len:
             raise UnexpectedEof(2, self._len - self._offset)
-        value = _STRUCT_I16.unpack(self._data[self._offset:end])[0]
+        value = _STRUCT_I16.unpack(self._data[self._offset : end])[0]
         self._offset = end
         return value
 
@@ -240,7 +238,7 @@ class BcsDeserializer:
         end = self._offset + 4
         if end > self._len:
             raise UnexpectedEof(4, self._len - self._offset)
-        value = _STRUCT_I32.unpack(self._data[self._offset:end])[0]
+        value = _STRUCT_I32.unpack(self._data[self._offset : end])[0]
         self._offset = end
         return value
 
@@ -253,7 +251,7 @@ class BcsDeserializer:
         end = self._offset + 8
         if end > self._len:
             raise UnexpectedEof(8, self._len - self._offset)
-        value = _STRUCT_I64.unpack(self._data[self._offset:end])[0]
+        value = _STRUCT_I64.unpack(self._data[self._offset : end])[0]
         self._offset = end
         return value
 
@@ -266,7 +264,7 @@ class BcsDeserializer:
         end = self._offset + 16
         if end > self._len:
             raise UnexpectedEof(16, self._len - self._offset)
-        value = int.from_bytes(self._data[self._offset:end], "little", signed=True)
+        value = int.from_bytes(self._data[self._offset : end], "little", signed=True)
         self._offset = end
         return value
 
@@ -279,7 +277,7 @@ class BcsDeserializer:
         end = self._offset + 32
         if end > self._len:
             raise UnexpectedEof(32, self._len - self._offset)
-        value = int.from_bytes(self._data[self._offset:end], "little", signed=True)
+        value = int.from_bytes(self._data[self._offset : end], "little", signed=True)
         self._offset = end
         return value
 
@@ -350,7 +348,7 @@ class BcsDeserializer:
         end = self._offset + length
         if end > self._len:
             raise UnexpectedEof(length, self._len - self._offset)
-        result = bytes(self._data[self._offset:end])
+        result = bytes(self._data[self._offset : end])
         self._offset = end
         return result
 
@@ -372,7 +370,7 @@ class BcsDeserializer:
             raise UnexpectedEof(length, self._len - self._offset)
         try:
             # Decode directly from memoryview
-            result = self._data[self._offset:end].tobytes().decode("utf-8")
+            result = self._data[self._offset : end].tobytes().decode("utf-8")
         except UnicodeDecodeError as e:
             raise InvalidUtf8(str(e)) from e
         self._offset = end
@@ -390,7 +388,7 @@ class BcsDeserializer:
         end = self._offset + length
         if end > self._len:
             raise UnexpectedEof(length, self._len - self._offset)
-        result = bytes(self._data[self._offset:end])
+        result = bytes(self._data[self._offset : end])
         self._offset = end
         return result
 
@@ -480,7 +478,7 @@ class BcsDeserializer:
         end = self._offset + length
         if end > self._len:
             raise UnexpectedEof(length, self._len - self._offset)
-        result = list(self._data[self._offset:end])
+        result = list(self._data[self._offset : end])
         self._offset = end
         return result
 
@@ -497,7 +495,7 @@ class BcsDeserializer:
         end = self._offset + byte_length
 
         # Use iter_unpack for better performance on large vectors
-        data = self._data[self._offset:end]
+        data = self._data[self._offset : end]
         result = [v for (v,) in struct.iter_unpack("<Q", data)]
         self._offset = end
         return result
