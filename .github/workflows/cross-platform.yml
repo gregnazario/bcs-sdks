@@ -467,7 +467,7 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore -r ${{ matrix.rid }}
         working-directory: sdks/csharp
 
       - name: Build
@@ -475,7 +475,7 @@ jobs:
         working-directory: sdks/csharp
 
       - name: Publish for target
-        run: dotnet publish --configuration Release --no-restore -r ${{ matrix.rid }} --self-contained false
+        run: dotnet publish --configuration Release -r ${{ matrix.rid }} --self-contained false
         working-directory: sdks/csharp/Bcs
 
       - name: Test
