@@ -24,6 +24,8 @@ linters-settings:
     check-blank: true
   govet:
     enable-all: true
+    disable:
+      - fieldalignment
   gofmt:
     simplify: true
   misspell:
