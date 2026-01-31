@@ -396,7 +396,7 @@ describe("ULEB128 encoding", () => {
     });
 
     it(`decode ${tc.name}`, () => {
-      const [value, bytesRead] = uleb128.decode(hexToBytes(tc.bcs_hex as string));
+      const [value, _bytesRead] = uleb128.decode(hexToBytes(tc.bcs_hex as string));
       expect(value).toBe(tc.value);
     });
   }
