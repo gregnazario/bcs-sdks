@@ -243,6 +243,7 @@ export class BcsDeserializer {
 
   /**
    * Deserialize fixed-length bytes (no length prefix).
+   * Returns a copy of the bytes.
    */
   readFixedBytes(length: number): Uint8Array {
     if (this.offset + length > this.data.length) {
@@ -250,6 +251,20 @@ export class BcsDeserializer {
     }
     // Use slice to create a copy (maintains existing behavior)
     const bytes = this.data.slice(this.offset, this.offset + length);
+    this.offset += length;
+    return bytes;
+  }
+
+  /**
+   * Deserialize fixed-length bytes as a view (no copy, no length prefix).
+   * WARNING: The returned view is only valid while the deserializer's data is not modified.
+   */
+  readFixedBytesView(length: number): Uint8Array {
+    if (this.offset + length > this.data.length) {
+      throw BcsError.unexpectedEof(length, this.data.length - this.offset);
+    }
+    // Use subarray for zero-copy view
+    const bytes = this.data.subarray(this.offset, this.offset + length);
     this.offset += length;
     return bytes;
   }
@@ -289,9 +304,10 @@ export class BcsDeserializer {
     if (length > MAX_SEQUENCE_LENGTH || !Number.isSafeInteger(length)) {
       throw BcsError.exceededMaxLength(length);
     }
-    const result: T[] = [];
+    // Pre-allocate array for better performance
+    const result: T[] = new Array(length);
     for (let i = 0; i < length; i++) {
-      result.push(deserializer(this));
+      result[i] = deserializer(this);
     }
     return result;
   }
@@ -393,7 +409,8 @@ export class BcsDeserializer {
       const keyStart = this.offset;
       const key = keyDeserializer(this);
       const keyEnd = this.offset;
-      const keyBytes = this.data.slice(keyStart, keyEnd);
+      // Use subarray for zero-copy view (only used for comparison)
+      const keyBytes = this.data.subarray(keyStart, keyEnd);
 
       // Verify key order
       if (prevKeyBytes !== null) {
@@ -405,7 +422,8 @@ export class BcsDeserializer {
           throw BcsError.nonCanonicalMap("keys not sorted");
         }
       }
-      prevKeyBytes = keyBytes;
+      // Copy key bytes only when storing for next comparison
+      prevKeyBytes = this.data.slice(keyStart, keyEnd);
 
       const value = valueDeserializer(this);
       result.set(key, value);

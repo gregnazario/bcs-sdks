@@ -223,11 +223,11 @@ module BCS
 
     # Write raw bytes (without length prefix)
     def write_fixed_bytes(data)
-      if data.is_a?(String)
-        @buffer << data.b
-      else
-        @buffer << data.pack("C*")
-      end
+      @buffer << if data.is_a?(String)
+                   data.b
+                 else
+                   data.pack("C*")
+                 end
       self
     end
 
@@ -348,10 +348,12 @@ module BCS
       check_sequence_length(map.size)
 
       # Serialize all entries and sort by key bytes
+      # Reuse single serializer to reduce allocations
+      temp_ser = Serializer.new(capacity: 64)
       entries = map.map do |key, value|
-        key_ser = Serializer.new(capacity: 64)
-        key_serializer.call(key_ser, key)
-        [key_ser.raw_buffer, key, value]
+        temp_ser.clear
+        key_serializer.call(temp_ser, key)
+        [temp_ser.raw_buffer.dup, key, value] # dup because we reuse serializer
       end
 
       # Sort by key bytes (lexicographic binary comparison)
@@ -379,7 +381,7 @@ module BCS
     # ========================================================================
 
     # Enter a struct/enum container (for depth tracking)
-    def enter_struct(name = "")
+    def enter_struct(_name = "")
       enter_container
       self
     end

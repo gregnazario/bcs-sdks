@@ -384,7 +384,13 @@ class BcsDeserializer:
 
         Returns:
             Deserialized bytes
+
+        Raises:
+            ValueError: If length is negative
+            UnexpectedEof: If not enough bytes available
         """
+        if length < 0:
+            raise ValueError(f"length must be non-negative, got {length}")
         end = self._offset + length
         if end > self._len:
             raise UnexpectedEof(length, self._len - self._offset)
@@ -468,7 +474,11 @@ class BcsDeserializer:
         length = self.read_uleb128()
         if length > self._max_alloc:
             raise ExceededMaxLength(length)
-        return [deserializer(self) for _ in range(length)]
+        # Pre-allocate list for better performance
+        result: list[T] = [None] * length  # type: ignore
+        for i in range(length):
+            result[i] = deserializer(self)
+        return result
 
     def read_vector_u8(self) -> list[int]:
         """Deserialize a vector of u8 (optimized - returns list of ints)."""

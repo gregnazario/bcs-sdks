@@ -87,7 +87,7 @@ static bcs_error_t grow_buffer(bcs_serializer_t* restrict ser, size_t required) 
     } else {
         new_capacity = ser->capacity * 2;
     }
-    
+
     if (new_capacity < required) {
         new_capacity = required;
     }
@@ -108,7 +108,7 @@ static bcs_error_t grow_buffer(bcs_serializer_t* restrict ser, size_t required) 
 }
 
 BCS_ALWAYS_INLINE BCS_HOT bcs_error_t ensure_capacity(bcs_serializer_t* restrict ser,
-                                                       size_t needed) {
+                                                      size_t needed) {
     /* Check for overflow when calculating required size */
     if (BCS_UNLIKELY(needed > SIZE_MAX - ser->size)) {
         return BCS_ERR_EXCEEDED_MAX_LENGTH;
@@ -121,7 +121,7 @@ BCS_ALWAYS_INLINE BCS_HOT bcs_error_t ensure_capacity(bcs_serializer_t* restrict
 }
 
 BCS_ALWAYS_INLINE BCS_HOT bcs_error_t write_byte(bcs_serializer_t* restrict ser,
-                                                  uint8_t byte) {
+                                                 uint8_t byte) {
     if (BCS_LIKELY(ser->size < ser->capacity)) {
         ser->buffer[ser->size++] = byte;
         return BCS_OK;
@@ -138,8 +138,8 @@ BCS_ALWAYS_INLINE BCS_HOT bcs_error_t write_byte(bcs_serializer_t* restrict ser,
 }
 
 BCS_ALWAYS_INLINE BCS_HOT bcs_error_t write_bytes_raw(bcs_serializer_t* restrict ser,
-                                                       const uint8_t* restrict data,
-                                                       size_t len) {
+                                                      const uint8_t* restrict data,
+                                                      size_t len) {
     bcs_error_t err = ensure_capacity(ser, len);
     if (BCS_UNLIKELY(err != BCS_OK))
         return err;
@@ -334,8 +334,7 @@ BCS_HOT bcs_error_t bcs_write_uleb128(bcs_serializer_t* restrict ser, uint32_t v
 }
 
 BCS_HOT bcs_error_t bcs_write_fixed_bytes(bcs_serializer_t* restrict ser,
-                                           const uint8_t* restrict data,
-                                           size_t len) {
+                                          const uint8_t* restrict data, size_t len) {
     if (BCS_UNLIKELY(!ser))
         return BCS_ERR_NULL_POINTER;
     if (BCS_UNLIKELY(len > 0 && !data))
@@ -344,7 +343,7 @@ BCS_HOT bcs_error_t bcs_write_fixed_bytes(bcs_serializer_t* restrict ser,
 }
 
 BCS_HOT bcs_error_t bcs_write_bytes(bcs_serializer_t* restrict ser,
-                                     const uint8_t* restrict data, size_t len) {
+                                    const uint8_t* restrict data, size_t len) {
     if (BCS_UNLIKELY(!ser))
         return BCS_ERR_NULL_POINTER;
     if (BCS_UNLIKELY(len > BCS_MAX_SEQUENCE_LENGTH))
@@ -367,7 +366,8 @@ BCS_HOT bcs_error_t bcs_write_bytes(bcs_serializer_t* restrict ser,
     do {
         uint8_t byte = v & 0x7F;
         v >>= 7;
-        if (v != 0) byte |= 0x80;
+        if (v != 0)
+            byte |= 0x80;
         p[i++] = byte;
     } while (v != 0);
     ser->size += i;
@@ -381,7 +381,7 @@ BCS_HOT bcs_error_t bcs_write_bytes(bcs_serializer_t* restrict ser,
 }
 
 BCS_HOT bcs_error_t bcs_write_string(bcs_serializer_t* restrict ser,
-                                      const char* restrict str) {
+                                     const char* restrict str) {
     if (BCS_UNLIKELY(!ser || !str))
         return BCS_ERR_NULL_POINTER;
     size_t len = strlen(str);
@@ -391,8 +391,8 @@ BCS_HOT bcs_error_t bcs_write_string(bcs_serializer_t* restrict ser,
     return bcs_write_bytes(ser, (const uint8_t*)str, len);
 }
 
-bcs_error_t bcs_write_string_n(bcs_serializer_t* restrict ser,
-                               const char* restrict str, size_t len) {
+bcs_error_t bcs_write_string_n(bcs_serializer_t* restrict ser, const char* restrict str,
+                               size_t len) {
     if (BCS_UNLIKELY(!ser))
         return BCS_ERR_NULL_POINTER;
     if (BCS_UNLIKELY(len > 0 && !str))
@@ -464,8 +464,7 @@ BCS_HOT bcs_error_t bcs_write_map_len(bcs_serializer_t* restrict ser, size_t len
  * ============================================================================ */
 
 bcs_error_t bcs_deserializer_init(bcs_deserializer_t* restrict des,
-                                  const uint8_t* restrict data,
-                                  size_t size) {
+                                  const uint8_t* restrict data, size_t size) {
     if (BCS_UNLIKELY(!des))
         return BCS_ERR_NULL_POINTER;
     if (BCS_UNLIKELY(size > 0 && !data))
@@ -492,7 +491,8 @@ BCS_PURE size_t bcs_remaining(const bcs_deserializer_t* restrict des) {
     return des->size - des->offset;
 }
 
-BCS_HOT bcs_error_t bcs_read_bool(bcs_deserializer_t* restrict des, bool* restrict value) {
+BCS_HOT bcs_error_t bcs_read_bool(bcs_deserializer_t* restrict des,
+                                  bool* restrict value) {
     if (BCS_UNLIKELY(!des || !value))
         return BCS_ERR_NULL_POINTER;
 
@@ -510,7 +510,8 @@ BCS_HOT bcs_error_t bcs_read_bool(bcs_deserializer_t* restrict des, bool* restri
     return BCS_OK;
 }
 
-BCS_HOT bcs_error_t bcs_read_u8(bcs_deserializer_t* restrict des, uint8_t* restrict value) {
+BCS_HOT bcs_error_t bcs_read_u8(bcs_deserializer_t* restrict des,
+                                uint8_t* restrict value) {
     if (BCS_UNLIKELY(!des || !value))
         return BCS_ERR_NULL_POINTER;
 
@@ -521,7 +522,8 @@ BCS_HOT bcs_error_t bcs_read_u8(bcs_deserializer_t* restrict des, uint8_t* restr
     return BCS_OK;
 }
 
-BCS_HOT bcs_error_t bcs_read_u16(bcs_deserializer_t* restrict des, uint16_t* restrict value) {
+BCS_HOT bcs_error_t bcs_read_u16(bcs_deserializer_t* restrict des,
+                                 uint16_t* restrict value) {
     if (BCS_UNLIKELY(!des || !value))
         return BCS_ERR_NULL_POINTER;
 
@@ -534,7 +536,8 @@ BCS_HOT bcs_error_t bcs_read_u16(bcs_deserializer_t* restrict des, uint16_t* res
     return BCS_OK;
 }
 
-BCS_HOT bcs_error_t bcs_read_u32(bcs_deserializer_t* restrict des, uint32_t* restrict value) {
+BCS_HOT bcs_error_t bcs_read_u32(bcs_deserializer_t* restrict des,
+                                 uint32_t* restrict value) {
     if (BCS_UNLIKELY(!des || !value))
         return BCS_ERR_NULL_POINTER;
 
@@ -543,15 +546,14 @@ BCS_HOT bcs_error_t bcs_read_u32(bcs_deserializer_t* restrict des, uint32_t* res
 
     /* Unrolled for performance */
     const uint8_t* p = des->data + des->offset;
-    *value = (uint32_t)p[0] |
-             ((uint32_t)p[1] << 8) |
-             ((uint32_t)p[2] << 16) |
+    *value = (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
              ((uint32_t)p[3] << 24);
     des->offset += 4;
     return BCS_OK;
 }
 
-BCS_HOT bcs_error_t bcs_read_u64(bcs_deserializer_t* restrict des, uint64_t* restrict value) {
+BCS_HOT bcs_error_t bcs_read_u64(bcs_deserializer_t* restrict des,
+                                 uint64_t* restrict value) {
     if (BCS_UNLIKELY(!des || !value))
         return BCS_ERR_NULL_POINTER;
 
@@ -560,14 +562,9 @@ BCS_HOT bcs_error_t bcs_read_u64(bcs_deserializer_t* restrict des, uint64_t* res
 
     /* Unrolled for performance */
     const uint8_t* p = des->data + des->offset;
-    *value = (uint64_t)p[0] |
-             ((uint64_t)p[1] << 8) |
-             ((uint64_t)p[2] << 16) |
-             ((uint64_t)p[3] << 24) |
-             ((uint64_t)p[4] << 32) |
-             ((uint64_t)p[5] << 40) |
-             ((uint64_t)p[6] << 48) |
-             ((uint64_t)p[7] << 56);
+    *value = (uint64_t)p[0] | ((uint64_t)p[1] << 8) | ((uint64_t)p[2] << 16) |
+             ((uint64_t)p[3] << 24) | ((uint64_t)p[4] << 32) | ((uint64_t)p[5] << 40) |
+             ((uint64_t)p[6] << 48) | ((uint64_t)p[7] << 56);
     des->offset += 8;
     return BCS_OK;
 }
@@ -610,7 +607,7 @@ bcs_error_t bcs_read_i256(bcs_deserializer_t* restrict des, uint8_t value[32]) {
 
 /* Optimized inline ULEB128 decode */
 BCS_HOT bcs_error_t bcs_read_uleb128(bcs_deserializer_t* restrict des,
-                                      uint32_t* restrict value) {
+                                     uint32_t* restrict value) {
     if (BCS_UNLIKELY(!des || !value))
         return BCS_ERR_NULL_POINTER;
 
@@ -631,7 +628,8 @@ BCS_HOT bcs_error_t bcs_read_uleb128(bcs_deserializer_t* restrict des,
     uint64_t result = 0;
     unsigned shift = 0;
     size_t i = 0;
-    size_t max_bytes = remaining < BCS_ULEB128_MAX_BYTES ? remaining : BCS_ULEB128_MAX_BYTES;
+    size_t max_bytes =
+        remaining < BCS_ULEB128_MAX_BYTES ? remaining : BCS_ULEB128_MAX_BYTES;
 
     for (; i < max_bytes; i++) {
         uint8_t byte = p[i];
@@ -661,7 +659,7 @@ BCS_HOT bcs_error_t bcs_read_uleb128(bcs_deserializer_t* restrict des,
 }
 
 BCS_HOT bcs_error_t bcs_read_fixed_bytes(bcs_deserializer_t* restrict des,
-                                          uint8_t* restrict buffer, size_t len) {
+                                         uint8_t* restrict buffer, size_t len) {
     if (BCS_UNLIKELY(!des))
         return BCS_ERR_NULL_POINTER;
     if (BCS_UNLIKELY(len > 0 && !buffer))
@@ -676,7 +674,7 @@ BCS_HOT bcs_error_t bcs_read_fixed_bytes(bcs_deserializer_t* restrict des,
 }
 
 BCS_HOT bcs_error_t bcs_read_bytes_len(bcs_deserializer_t* restrict des,
-                                        size_t* restrict len) {
+                                       size_t* restrict len) {
     if (BCS_UNLIKELY(!des || !len))
         return BCS_ERR_NULL_POINTER;
 
@@ -694,8 +692,8 @@ BCS_HOT bcs_error_t bcs_read_bytes_len(bcs_deserializer_t* restrict des,
 }
 
 BCS_HOT bcs_error_t bcs_read_bytes(bcs_deserializer_t* restrict des,
-                                    uint8_t* restrict buffer, size_t buffer_size,
-                                    size_t* restrict out_len) {
+                                   uint8_t* restrict buffer, size_t buffer_size,
+                                   size_t* restrict out_len) {
     if (BCS_UNLIKELY(!des || !out_len))
         return BCS_ERR_NULL_POINTER;
 
@@ -717,8 +715,8 @@ BCS_HOT bcs_error_t bcs_read_bytes(bcs_deserializer_t* restrict des,
 }
 
 BCS_HOT bcs_error_t bcs_read_string(bcs_deserializer_t* restrict des,
-                                     char* restrict buffer, size_t buffer_size,
-                                     size_t* restrict out_len) {
+                                    char* restrict buffer, size_t buffer_size,
+                                    size_t* restrict out_len) {
     if (BCS_UNLIKELY(!des || !out_len))
         return BCS_ERR_NULL_POINTER;
 
@@ -783,7 +781,7 @@ bcs_error_t bcs_des_leave_enum(bcs_deserializer_t* restrict des) {
 }
 
 BCS_HOT bcs_error_t bcs_read_option_tag(bcs_deserializer_t* restrict des,
-                                         bool* restrict is_some) {
+                                        bool* restrict is_some) {
     if (BCS_UNLIKELY(!des || !is_some))
         return BCS_ERR_NULL_POINTER;
 
@@ -802,12 +800,12 @@ BCS_HOT bcs_error_t bcs_read_option_tag(bcs_deserializer_t* restrict des,
 }
 
 BCS_HOT bcs_error_t bcs_read_vector_len(bcs_deserializer_t* restrict des,
-                                         size_t* restrict len) {
+                                        size_t* restrict len) {
     return bcs_read_bytes_len(des, len);
 }
 
 BCS_HOT bcs_error_t bcs_read_map_len(bcs_deserializer_t* restrict des,
-                                      size_t* restrict len) {
+                                     size_t* restrict len) {
     return bcs_read_vector_len(des, len);
 }
 
@@ -838,16 +836,14 @@ int bcs_compare_bytes(const uint8_t* a, size_t a_len, const uint8_t* b, size_t b
     return 0;
 }
 
-bcs_error_t bcs_read_map_validated(
-    bcs_deserializer_t* des,
-    bcs_key_deserializer_fn key_deserializer,
-    bcs_value_deserializer_fn value_deserializer,
-    bcs_map_entry_handler_fn entry_handler,
-    void* user_data,
-    void* key_scratch,
-    void* value_scratch) {
-
-    if (BCS_UNLIKELY(!des || !key_deserializer || !value_deserializer || !entry_handler))
+bcs_error_t bcs_read_map_validated(bcs_deserializer_t* des,
+                                   bcs_key_deserializer_fn key_deserializer,
+                                   bcs_value_deserializer_fn value_deserializer,
+                                   bcs_map_entry_handler_fn entry_handler,
+                                   void* user_data, void* key_scratch,
+                                   void* value_scratch) {
+    if (BCS_UNLIKELY(!des || !key_deserializer || !value_deserializer ||
+                     !entry_handler))
         return BCS_ERR_NULL_POINTER;
 
     size_t len;
@@ -874,7 +870,8 @@ bcs_error_t bcs_read_map_validated(
 
         /* Validate key ordering */
         if (prev_key_bytes != NULL) {
-            int cmp = bcs_compare_bytes(prev_key_bytes, prev_key_len, key_bytes, key_len);
+            int cmp =
+                bcs_compare_bytes(prev_key_bytes, prev_key_len, key_bytes, key_len);
             if (cmp == 0) {
                 return BCS_ERR_DUPLICATE_MAP_KEY;
             }
@@ -903,7 +900,8 @@ bcs_error_t bcs_read_map_validated(
  * ULEB128 UTILITIES
  * ============================================================================ */
 
-size_t bcs_uleb128_encode(uint32_t value, uint8_t* restrict buffer, size_t buffer_size) {
+size_t bcs_uleb128_encode(uint32_t value, uint8_t* restrict buffer,
+                          size_t buffer_size) {
     if (BCS_UNLIKELY(!buffer || buffer_size == 0))
         return 0;
 
@@ -984,10 +982,14 @@ size_t bcs_uleb128_decode(const uint8_t* restrict data, size_t size,
 
 BCS_PURE size_t bcs_uleb128_encoded_size(uint32_t value) {
     /* Optimized using bit manipulation - each 7 bits requires one byte */
-    if (value < (1U << 7)) return 1;
-    if (value < (1U << 14)) return 2;
-    if (value < (1U << 21)) return 3;
-    if (value < (1U << 28)) return 4;
+    if (value < (1U << 7))
+        return 1;
+    if (value < (1U << 14))
+        return 2;
+    if (value < (1U << 21))
+        return 3;
+    if (value < (1U << 28))
+        return 4;
     return 5;
 }
 
@@ -1071,22 +1073,20 @@ BCS_HOT bool bcs_is_valid_utf8(const uint8_t* restrict data, size_t len) {
 
 /* Lookup table for hex digit values (-1 for invalid) */
 static const int8_t hex_values[256] = {
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-     0, 1, 2, 3, 4, 5, 6, 7, 8, 9,-1,-1,-1,-1,-1,-1,  /* 0-9 */
-    -1,10,11,12,13,14,15,-1,-1,-1,-1,-1,-1,-1,-1,-1,  /* A-F */
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,10,11,12,13,14,15,-1,-1,-1,-1,-1,-1,-1,-1,-1,  /* a-f */
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  -1, -1, -1, -1, -1,
+    -1,                                                             /* 0-9 */
+    -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1, /* A-F */
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13,
+    14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1, /* a-f */
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 };
 
 size_t bcs_bytes_to_hex(const uint8_t* restrict bytes, size_t len,

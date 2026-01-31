@@ -450,12 +450,12 @@ func (d *Deserializer) ReadMapWithDeserializer(
 		}
 
 		keyEnd := d.offset
-		keyBytes := make([]byte, keyEnd-keyStart)
-		copy(keyBytes, d.data[keyStart:keyEnd])
+		// Use slice view for comparison (zero-copy)
+		keyView := d.data[keyStart:keyEnd]
 
 		// Validate key ordering
 		if prevKeyBytes != nil {
-			cmp := CompareBytes(prevKeyBytes, keyBytes)
+			cmp := CompareBytes(prevKeyBytes, keyView)
 			if cmp == 0 {
 				return nil, nil, NewDuplicateMapKey()
 			}
@@ -463,7 +463,9 @@ func (d *Deserializer) ReadMapWithDeserializer(
 				return nil, nil, NewNonCanonicalMap()
 			}
 		}
-		prevKeyBytes = keyBytes
+		// Only copy when storing for next comparison
+		prevKeyBytes = make([]byte, len(keyView))
+		copy(prevKeyBytes, keyView)
 
 		value, err := valueDeserializer(d)
 		if err != nil {
@@ -499,12 +501,12 @@ func (d *Deserializer) ReadStringMap(
 		}
 
 		keyEnd := d.offset
-		keyBytes := make([]byte, keyEnd-keyStart)
-		copy(keyBytes, d.data[keyStart:keyEnd])
+		// Use slice view for comparison (zero-copy)
+		keyView := d.data[keyStart:keyEnd]
 
 		// Validate key ordering
 		if prevKeyBytes != nil {
-			cmp := CompareBytes(prevKeyBytes, keyBytes)
+			cmp := CompareBytes(prevKeyBytes, keyView)
 			if cmp == 0 {
 				return nil, NewDuplicateMapKey()
 			}
@@ -512,7 +514,9 @@ func (d *Deserializer) ReadStringMap(
 				return nil, NewNonCanonicalMap()
 			}
 		}
-		prevKeyBytes = keyBytes
+		// Only copy when storing for next comparison
+		prevKeyBytes = make([]byte, len(keyView))
+		copy(prevKeyBytes, keyView)
 
 		value, err := valueDeserializer(d)
 		if err != nil {
@@ -547,12 +551,12 @@ func (d *Deserializer) ReadU64Map(
 		}
 
 		keyEnd := d.offset
-		keyBytes := make([]byte, keyEnd-keyStart)
-		copy(keyBytes, d.data[keyStart:keyEnd])
+		// Use slice view for comparison (zero-copy)
+		keyView := d.data[keyStart:keyEnd]
 
 		// Validate key ordering
 		if prevKeyBytes != nil {
-			cmp := CompareBytes(prevKeyBytes, keyBytes)
+			cmp := CompareBytes(prevKeyBytes, keyView)
 			if cmp == 0 {
 				return nil, NewDuplicateMapKey()
 			}
@@ -560,7 +564,9 @@ func (d *Deserializer) ReadU64Map(
 				return nil, NewNonCanonicalMap()
 			}
 		}
-		prevKeyBytes = keyBytes
+		// Only copy when storing for next comparison
+		prevKeyBytes = make([]byte, len(keyView))
+		copy(prevKeyBytes, keyView)
 
 		value, err := valueDeserializer(d)
 		if err != nil {
@@ -604,8 +610,9 @@ func (d *Deserializer) ReadU16Slice() ([]uint16, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Check for integer overflow before multiplication
-	if length > uint32(MaxSequenceLength/2) {
+	// Check for integer overflow before multiplication (safe for 32-bit platforms)
+	// Use (MaxSequenceLength-1)/2 to ensure byteLen doesn't overflow int
+	if length > uint32((MaxSequenceLength-1)/2) {
 		return nil, NewExceededMaxLength(uint64(length))
 	}
 	byteLen := int(length) * 2
@@ -626,8 +633,9 @@ func (d *Deserializer) ReadU32Slice() ([]uint32, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Check for integer overflow before multiplication
-	if length > uint32(MaxSequenceLength/4) {
+	// Check for integer overflow before multiplication (safe for 32-bit platforms)
+	// Use (MaxSequenceLength-1)/4 to ensure byteLen doesn't overflow int
+	if length > uint32((MaxSequenceLength-1)/4) {
 		return nil, NewExceededMaxLength(uint64(length))
 	}
 	byteLen := int(length) * 4
@@ -648,8 +656,9 @@ func (d *Deserializer) ReadU64Slice() ([]uint64, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Check for integer overflow before multiplication
-	if length > uint32(MaxSequenceLength/8) {
+	// Check for integer overflow before multiplication (safe for 32-bit platforms)
+	// Use (MaxSequenceLength-1)/8 to ensure byteLen doesn't overflow int
+	if length > uint32((MaxSequenceLength-1)/8) {
 		return nil, NewExceededMaxLength(uint64(length))
 	}
 	byteLen := int(length) * 8

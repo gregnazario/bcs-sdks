@@ -416,7 +416,8 @@ public final class BcsDeserializer {
         let length = Int(uleb)
         try checkSequenceLength(length)
         let byteCount = length * 2
-        guard offset &+ byteCount <= data.count else {
+        // Check bounds without overflow: ensure remaining bytes >= byteCount
+        guard data.count - offset >= byteCount else {
             throw BcsError.unexpectedEof()
         }
         var result = [UInt16]()
@@ -440,7 +441,8 @@ public final class BcsDeserializer {
         let length = Int(uleb)
         try checkSequenceLength(length)
         let byteCount = length * 4
-        guard offset &+ byteCount <= data.count else {
+        // Check bounds without overflow: ensure remaining bytes >= byteCount
+        guard data.count - offset >= byteCount else {
             throw BcsError.unexpectedEof()
         }
         var result = [UInt32]()
@@ -468,7 +470,8 @@ public final class BcsDeserializer {
         let length = Int(uleb)
         try checkSequenceLength(length)
         let byteCount = length * 8
-        guard offset &+ byteCount <= data.count else {
+        // Check bounds without overflow: ensure remaining bytes >= byteCount
+        guard data.count - offset >= byteCount else {
             throw BcsError.unexpectedEof()
         }
         var result = [UInt64]()

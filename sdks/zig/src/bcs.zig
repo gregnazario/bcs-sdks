@@ -102,7 +102,7 @@ pub fn encodeUleb128(value: u32, buffer: []u8) usize {
 /// Decode ULEB128 from bytes. Returns value and bytes consumed.
 pub fn decodeUleb128(data: []const u8) Error!struct { value: u32, bytes_read: usize } {
     var value: u32 = 0;
-    var shift: u5 = 0;
+    var shift: u6 = 0; // u6 to hold values up to 35 for overflow check
     var i: usize = 0;
 
     while (i < max_uleb128_bytes) {
@@ -330,6 +330,12 @@ pub const Serializer = struct {
         if (!std.unicode.utf8ValidateSlice(str)) {
             return Error.InvalidUtf8;
         }
+        try self.writeBytes(str);
+    }
+
+    /// Write a string without UTF-8 validation (for known-valid strings).
+    /// WARNING: Caller must ensure the string is valid UTF-8.
+    pub fn writeStringUnchecked(self: *Self, str: []const u8) Error!void {
         try self.writeBytes(str);
     }
 

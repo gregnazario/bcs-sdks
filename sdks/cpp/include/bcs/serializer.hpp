@@ -135,7 +135,10 @@ class Serializer {
     Serializer& write_uleb128(uint32_t value) {
         // Use stack-allocated buffer to avoid heap allocation
         auto encoded = uleb128::encode_to_buffer(value);
-        buffer_.insert(buffer_.end(), encoded.begin(), encoded.end());
+        // Use resize + memcpy instead of insert for better performance
+        const size_t pos = buffer_.size();
+        buffer_.resize(pos + encoded.size());
+        std::memcpy(buffer_.data() + pos, encoded.data(), encoded.size());
         return *this;
     }
 
@@ -156,10 +159,12 @@ class Serializer {
     Serializer& write_bytes(const uint8_t* data, size_t len) {
         check_sequence_length(len);
         // Pre-calculate total size needed with overflow check
-        const size_t uleb_size = uleb128::encoded_size(static_cast<uint32_t>(len));
+        const size_t uleb_size =
+            uleb128::encoded_size(static_cast<uint32_t>(len));
         const size_t current_size = buffer_.size();
         // Check for overflow before addition
-        if (uleb_size > SIZE_MAX - len || current_size > SIZE_MAX - uleb_size - len) {
+        if (uleb_size > SIZE_MAX - len ||
+            current_size > SIZE_MAX - uleb_size - len) {
             throw Error::exceeded_max_length(len);
         }
         buffer_.reserve(current_size + uleb_size + len);
@@ -209,18 +214,21 @@ class Serializer {
         check_sequence_length(map.size());
 
         // Serialize all entries and sort by key bytes
+        // Use a single pair of reusable serializers to reduce allocations
         std::vector<std::pair<std::vector<uint8_t>, std::vector<uint8_t>>>
             entries;
         entries.reserve(map.size());
 
+        Serializer temp_ser;  // Reuse single serializer
         for (const auto& [key, value] : map) {
-            Serializer key_ser;
-            key_serializer(key_ser, key);
+            temp_ser.clear();
+            key_serializer(temp_ser, key);
+            auto key_bytes = temp_ser.to_bytes();
 
-            Serializer value_ser;
-            value_serializer(value_ser, value);
+            temp_ser.clear();
+            value_serializer(temp_ser, value);
 
-            entries.emplace_back(key_ser.to_bytes(), value_ser.to_bytes());
+            entries.emplace_back(std::move(key_bytes), temp_ser.to_bytes());
         }
 
         // Sort by key bytes (lexicographic)
@@ -228,12 +236,11 @@ class Serializer {
             entries.begin(), entries.end(),
             [](const auto& a, const auto& b) { return a.first < b.first; });
 
-        // Write length and entries
+        // Write length and entries using efficient copy
         write_uleb128(static_cast<uint32_t>(entries.size()));
         for (const auto& [key_bytes, value_bytes] : entries) {
-            buffer_.insert(buffer_.end(), key_bytes.begin(), key_bytes.end());
-            buffer_.insert(buffer_.end(), value_bytes.begin(),
-                           value_bytes.end());
+            write_fixed_bytes(key_bytes);
+            write_fixed_bytes(value_bytes);
         }
 
         return *this;

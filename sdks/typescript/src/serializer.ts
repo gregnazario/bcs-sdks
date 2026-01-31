@@ -62,11 +62,21 @@ export class BcsSerializer {
 
   /** Ensure buffer has capacity for additional bytes */
   private ensureCapacity(needed: number): void {
+    // Check for overflow before addition
+    if (needed > Number.MAX_SAFE_INTEGER - this.size) {
+      throw BcsError.exceededMaxLength(needed);
+    }
     const required = this.size + needed;
     if (required <= this.buffer.length) return;
 
-    // Grow by doubling or to required size
-    let newCapacity = this.buffer.length * 2;
+    // Grow by doubling or to required size, with overflow check
+    // Check before multiplication to avoid precision loss
+    let newCapacity: number;
+    if (this.buffer.length > Number.MAX_SAFE_INTEGER / 2) {
+      newCapacity = Number.MAX_SAFE_INTEGER;
+    } else {
+      newCapacity = this.buffer.length * 2;
+    }
     if (newCapacity < required) newCapacity = required;
     const newBuffer = new Uint8Array(newCapacity);
     newBuffer.set(this.buffer.subarray(0, this.size));
@@ -452,10 +462,12 @@ export class BcsSerializer {
     }
 
     // Serialize keys to get bytes for sorting
+    // Reuse single serializer to reduce allocations
+    const tempSer = new BcsSerializer(64);
     const keyBytesEntries = entryArray.map(([key, value]) => {
-      const keySer = new BcsSerializer();
-      keySerializer(keySer, key);
-      return { keyBytes: keySer.toBytes(), key, value };
+      tempSer.clear();
+      keySerializer(tempSer, key);
+      return { keyBytes: tempSer.toBytes(), key, value };
     });
 
     // Sort by key bytes
@@ -465,9 +477,9 @@ export class BcsSerializer {
     this.writeUleb128(keyBytesEntries.length);
     for (const { keyBytes, value } of keyBytesEntries) {
       this.ensureCapacity(keyBytes.length);
-      for (const byte of keyBytes) {
-        this.buffer[this.size++] = byte;
-      }
+      // Use set() for efficient bulk copy instead of byte-by-byte
+      this.buffer.set(keyBytes, this.size);
+      this.size += keyBytes.length;
       valueSerializer(this, value);
     }
 
@@ -490,6 +502,14 @@ export class BcsSerializer {
    */
   get length(): number {
     return this.size;
+  }
+
+  /**
+   * Clear the buffer for reuse.
+   */
+  clear(): void {
+    this.size = 0;
+    this.depth = 0;
   }
 
   // ==========================================================================

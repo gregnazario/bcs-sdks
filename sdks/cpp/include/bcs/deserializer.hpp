@@ -62,8 +62,8 @@ class Deserializer {
             throw Error::unexpected_eof();
         }
         const uint8_t* p = data_ + offset_;
-        const uint16_t value = static_cast<uint16_t>(p[0]) |
-                               (static_cast<uint16_t>(p[1]) << 8);
+        const uint16_t value =
+            static_cast<uint16_t>(p[0]) | (static_cast<uint16_t>(p[1]) << 8);
         offset_ += 2;
         return value;
     }
@@ -304,7 +304,9 @@ class Deserializer {
     [[nodiscard]] size_t remaining() const noexcept { return size_ - offset_; }
 
     /// Check if there's more data to read
-    [[nodiscard]] bool has_remaining() const noexcept { return offset_ < size_; }
+    [[nodiscard]] bool has_remaining() const noexcept {
+        return offset_ < size_;
+    }
 
    private:
     void check_sequence_length(uint32_t len) {

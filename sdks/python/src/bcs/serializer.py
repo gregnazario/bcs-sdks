@@ -74,6 +74,14 @@ class BcsSerializer:
         """
         return bytes(self._buffer)
 
+    def clear(self) -> None:
+        """Clear the buffer for reuse.
+
+        This is useful for performance when serializing many values.
+        """
+        self._buffer.clear()
+        self._current_depth = 0
+
     def _check_depth(self, container: str = "") -> None:
         """Check and increment container depth."""
         if self._current_depth >= self._max_depth:
@@ -560,11 +568,13 @@ class BcsSerializer:
             raise ExceededMaxLength(len(items))
 
         # Serialize each key to get bytes for sorting
+        # Reuse single serializer to reduce allocations
         key_bytes_pairs: list[tuple[bytes, Any, Any]] = []
+        temp_ser = BcsSerializer()
         for key, value in items.items():
-            key_ser = BcsSerializer()
-            key_serializer(key_ser, key)
-            key_bytes_pairs.append((key_ser.to_bytes(), key, value))
+            temp_ser.clear()
+            key_serializer(temp_ser, key)
+            key_bytes_pairs.append((temp_ser.to_bytes(), key, value))
 
         # Sort by key bytes
         key_bytes_pairs.sort(key=lambda x: x[0])

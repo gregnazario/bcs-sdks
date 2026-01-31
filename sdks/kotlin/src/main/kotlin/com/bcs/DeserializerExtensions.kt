@@ -51,7 +51,7 @@ inline fun <T> BcsDeserializer.readList(
 ): List<T> {
     val lengthLong = readUleb128()
     if (lengthLong > Int.MAX_VALUE) {
-        throw BcsError.exceededMaxLength(lengthLong.toInt())
+        throw BcsError.exceededMaxLength(lengthLong)
     }
     val length = lengthLong.toInt()
     return List(length) { deserializer() }
@@ -65,7 +65,7 @@ inline fun <T> BcsDeserializer.readMutableList(
 ): MutableList<T> {
     val lengthLong = readUleb128()
     if (lengthLong > Int.MAX_VALUE) {
-        throw BcsError.exceededMaxLength(lengthLong.toInt())
+        throw BcsError.exceededMaxLength(lengthLong)
     }
     val length = lengthLong.toInt()
     return MutableList(length) { deserializer() }
@@ -77,7 +77,7 @@ inline fun <T> BcsDeserializer.readMutableList(
 fun BcsDeserializer.readByteList(): ByteArray {
     val lengthLong = readUleb128()
     if (lengthLong > Int.MAX_VALUE) {
-        throw BcsError.exceededMaxLength(lengthLong.toInt())
+        throw BcsError.exceededMaxLength(lengthLong)
     }
     val length = lengthLong.toInt()
     return ByteArray(length) { readU8().toByte() }
@@ -143,7 +143,7 @@ inline fun <K, V> BcsDeserializer.readMap(
 ): Map<K, V> {
     val lengthLong = readUleb128()
     if (lengthLong > Int.MAX_VALUE || lengthLong > BcsConstants.MAX_SEQUENCE_LENGTH) {
-        throw BcsError.exceededMaxLength(lengthLong.toInt())
+        throw BcsError.exceededMaxLength(lengthLong)
     }
     val length = lengthLong.toInt()
     
@@ -198,7 +198,7 @@ inline fun <K, V> BcsDeserializer.readMutableMap(
 ): MutableMap<K, V> {
     val lengthLong = readUleb128()
     if (lengthLong > Int.MAX_VALUE || lengthLong > BcsConstants.MAX_SEQUENCE_LENGTH) {
-        throw BcsError.exceededMaxLength(lengthLong.toInt())
+        throw BcsError.exceededMaxLength(lengthLong)
     }
     val length = lengthLong.toInt()
     

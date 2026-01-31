@@ -349,24 +349,28 @@ public class BcsSerializer
         Action<BcsSerializer, V> valueSerializer)
     {
         // Serialize keys to get their byte representation for sorting
-        var serializedEntries = new List<(byte[] keyBytes, K key, V value)>();
+        var serializedEntries = new List<(byte[] keyBytes, V value)>();
         var tempSerializer = new BcsSerializer();
 
         foreach (var entry in entries)
         {
             tempSerializer.Clear();
             keySerializer(tempSerializer, entry.Key);
-            serializedEntries.Add((tempSerializer.ToArray(), entry.Key, entry.Value));
+            // Store key bytes and value
+            serializedEntries.Add((tempSerializer.ToArray(), entry.Value));
         }
 
         // Sort by serialized key bytes
         serializedEntries.Sort((a, b) => CompareBytes(a.keyBytes, b.keyBytes));
 
-        // Write the sorted entries
+        // Write the sorted entries using pre-serialized key bytes
         WriteMapLength(serializedEntries.Count);
-        foreach (var (_, key, value) in serializedEntries)
+        foreach (var (keyBytes, value) in serializedEntries)
         {
-            keySerializer(this, key);
+            // Use pre-serialized key bytes directly instead of re-serializing
+            EnsureCapacity(keyBytes.Length);
+            Buffer.BlockCopy(keyBytes, 0, _buffer, _size, keyBytes.Length);
+            _size += keyBytes.Length;
             valueSerializer(this, value);
         }
 
@@ -466,11 +470,19 @@ public class BcsSerializer
 
     private void EnsureCapacity(int additional)
     {
+        // Check for overflow before addition
+        if (additional > int.MaxValue - _size)
+        {
+            throw BcsException.ExceededMaxLength((ulong)_size + (ulong)additional);
+        }
         var required = _size + additional;
         if (required > _buffer.Length)
         {
-            // Grow by at least 50% or to required size
-            var newCapacity = Math.Max(_buffer.Length + (_buffer.Length >> 1), required);
+            // Grow by at least 50% or to required size, with overflow check
+            var growth = _buffer.Length >> 1;
+            var newCapacity = (_buffer.Length > int.MaxValue - growth)
+                ? required  // Can't grow by 50%, just use required
+                : Math.Max(_buffer.Length + growth, required);
             Array.Resize(ref _buffer, newCapacity);
         }
     }

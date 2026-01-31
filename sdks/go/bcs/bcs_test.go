@@ -748,8 +748,8 @@ func BenchmarkSerializeULEB128(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		ser := NewSerializer()
-		ser.WriteULEB128(uint32(i % 128))    // Single byte
-		ser.WriteULEB128(uint32(16384 + i))  // Multi-byte
+		ser.WriteULEB128(uint32(i % 128))   // Single byte
+		ser.WriteULEB128(uint32(16384 + i)) // Multi-byte
 		_ = ser.Bytes()
 	}
 }

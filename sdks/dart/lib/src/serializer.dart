@@ -20,12 +20,17 @@ class BcsSerializer {
 
   /// Ensure buffer has capacity for [needed] more bytes
   void _ensureCapacity(int needed) {
+    // Check for overflow before addition
+    if (needed > maxSequenceLength - _size) {
+      throw BcsError.exceededMaxLength(_size + needed, maxSequenceLength);
+    }
     final required = _size + needed;
     if (required <= _buffer.length) return;
 
     // Grow by doubling or to required size, whichever is larger
+    // Guard against overflow in capacity calculation
     var newCapacity = _buffer.length * 2;
-    if (newCapacity < required) newCapacity = required;
+    if (newCapacity < 0 || newCapacity < required) newCapacity = required;
     final newBuffer = Uint8List(newCapacity);
     newBuffer.setRange(0, _size, _buffer);
     _buffer = newBuffer;

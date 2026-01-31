@@ -55,6 +55,11 @@ class BcsError(
             "Sequence length $length exceeds maximum ${BcsConstants.MAX_SEQUENCE_LENGTH}"
         )
 
+        fun exceededMaxLength(length: Long) = BcsError(
+            BcsErrorType.EXCEEDED_MAX_LENGTH,
+            "Sequence length $length exceeds maximum ${BcsConstants.MAX_SEQUENCE_LENGTH}"
+        )
+
         fun exceededContainerDepth(container: String) = BcsError(
             BcsErrorType.EXCEEDED_CONTAINER_DEPTH,
             "Container depth exceeds maximum ${BcsConstants.MAX_CONTAINER_DEPTH}: $container"

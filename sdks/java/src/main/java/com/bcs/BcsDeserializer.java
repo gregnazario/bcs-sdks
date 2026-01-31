@@ -27,6 +27,8 @@ import java.util.function.Function;
  * String value3 = des.readString();
  * des.checkEnd();
  * }</pre>
+ *
+ * @implNote Uses a ThreadLocal CharsetDecoder for efficient string validation.
  */
 public class BcsDeserializer {
 
@@ -35,6 +37,13 @@ public class BcsDeserializer {
     private static final BigInteger TWO_POW_128 = BigInteger.ONE.shiftLeft(128);
     private static final BigInteger SIGN_BIT_256 = BigInteger.ONE.shiftLeft(255);
     private static final BigInteger TWO_POW_256 = BigInteger.ONE.shiftLeft(256);
+
+    // ThreadLocal CharsetDecoder for efficient string validation (avoids allocation per call)
+    private static final ThreadLocal<CharsetDecoder> UTF8_DECODER = ThreadLocal.withInitial(() ->
+        StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+    );
 
     private final byte[] data;
     private int offset = 0;
@@ -250,6 +259,10 @@ public class BcsDeserializer {
         if (length > BcsSerializer.MAX_SEQUENCE_LENGTH) {
             throw BcsError.exceededMaxLength(length);
         }
+        // Defense-in-depth: explicit check before cast
+        if (length > Integer.MAX_VALUE) {
+            throw BcsError.exceededMaxLength(length);
+        }
         return readFixedBytes((int) length);
     }
 
@@ -260,9 +273,9 @@ public class BcsDeserializer {
      */
     public String readString() {
         byte[] bytes = readBytes();
-        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        // Use cached ThreadLocal decoder for better performance
+        CharsetDecoder decoder = UTF8_DECODER.get();
+        decoder.reset(); // Reset state for reuse
         try {
             return decoder.decode(ByteBuffer.wrap(bytes)).toString();
         } catch (CharacterCodingException e) {
@@ -386,20 +399,26 @@ public class BcsDeserializer {
         if (length > BcsSerializer.MAX_SEQUENCE_LENGTH) {
             throw BcsError.exceededMaxLength(length);
         }
+        // Defense-in-depth: explicit check before cast
+        if (length > Integer.MAX_VALUE) {
+            throw BcsError.exceededMaxLength(length);
+        }
+        int len = (int) length;
 
-        Map<K, V> result = new LinkedHashMap<>();
+        // Pre-allocate with capacity hint for better performance
+        Map<K, V> result = new LinkedHashMap<>(len);
         byte[] prevKeyBytes = null;
 
-        for (int i = 0; i < length; i++) {
+        for (int i = 0; i < len; i++) {
             // Record position before reading key
             int keyStart = offset;
             K key = keyDeserializer.apply(this);
             int keyEnd = offset;
-            byte[] keyBytes = Arrays.copyOfRange(data, keyStart, keyEnd);
 
-            // Verify key order
+            // Verify key order using view comparison (zero-copy)
             if (prevKeyBytes != null) {
-                int cmp = compareBytes(prevKeyBytes, keyBytes);
+                int cmp = compareBytesRange(prevKeyBytes, 0, prevKeyBytes.length, 
+                                           data, keyStart, keyEnd - keyStart);
                 if (cmp == 0) {
                     throw BcsError.nonCanonicalMap("duplicate key");
                 }
@@ -407,7 +426,8 @@ public class BcsDeserializer {
                     throw BcsError.nonCanonicalMap("keys not sorted");
                 }
             }
-            prevKeyBytes = keyBytes;
+            // Only copy for storing as previous key
+            prevKeyBytes = Arrays.copyOfRange(data, keyStart, keyEnd);
 
             V value = valueDeserializer.apply(this);
             result.put(key, value);
@@ -519,5 +539,20 @@ public class BcsDeserializer {
      */
     private static int compareBytes(byte[] a, byte[] b) {
         return Arrays.compareUnsigned(a, b);
+    }
+
+    /**
+     * Compare a byte array with a range in another array (zero-copy comparison).
+     */
+    private static int compareBytesRange(byte[] a, int aOffset, int aLen, 
+                                         byte[] b, int bOffset, int bLen) {
+        int minLen = Math.min(aLen, bLen);
+        for (int i = 0; i < minLen; i++) {
+            int cmp = (a[aOffset + i] & 0xFF) - (b[bOffset + i] & 0xFF);
+            if (cmp != 0) {
+                return cmp;
+            }
+        }
+        return aLen - bLen;
     }
 }

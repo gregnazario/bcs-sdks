@@ -557,7 +557,8 @@ where
             return Err(Error::ExpectedMapValue);
         }
 
-        let mut output = Vec::new();
+        // Pre-allocate with reasonable capacity for common key sizes
+        let mut output = Vec::with_capacity(32);
         key.serialize(Serializer::new(
             &mut output,
             self.serializer.max_remaining_depth,
@@ -572,7 +573,8 @@ where
     {
         match self.next_key.take() {
             Some(key) => {
-                let mut output = Vec::new();
+                // Pre-allocate with reasonable capacity for common value sizes
+                let mut output = Vec::with_capacity(64);
                 value.serialize(Serializer::new(
                     &mut output,
                     self.serializer.max_remaining_depth,

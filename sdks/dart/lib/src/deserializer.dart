@@ -273,7 +273,12 @@ class BcsDeserializer {
   List<T> readVector<T>(T Function(BcsDeserializer) deserializer) {
     final length = readUleb128();
     _checkSequenceLength(length);
-    return List.generate(length, (_) => deserializer(this));
+    // Pre-allocate list with known size for better performance
+    final result = List<T>.filled(length, null as T, growable: false);
+    for (var i = 0; i < length; i++) {
+      result[i] = deserializer(this);
+    }
+    return result;
   }
 
   /// Read a map with key/value deserializers

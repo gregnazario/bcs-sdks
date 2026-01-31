@@ -415,6 +415,7 @@ module BCS
     private
 
     def check_remaining(needed)
+      raise ArgumentError, "length must be non-negative" if needed < 0
       raise Error.unexpected_eof if @offset + needed > @data.bytesize
     end
 

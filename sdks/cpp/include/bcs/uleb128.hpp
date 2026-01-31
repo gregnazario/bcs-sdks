@@ -47,17 +47,22 @@ struct EncodedValue {
 /// @return Number of bytes required to encode the value
 [[nodiscard]] constexpr size_t encoded_size(uint32_t value) noexcept {
     // Optimized using bit manipulation
-    if (value < (1U << 7)) return 1;
-    if (value < (1U << 14)) return 2;
-    if (value < (1U << 21)) return 3;
-    if (value < (1U << 28)) return 4;
+    if (value < (1U << 7))
+        return 1;
+    if (value < (1U << 14))
+        return 2;
+    if (value < (1U << 21))
+        return 3;
+    if (value < (1U << 28))
+        return 4;
     return 5;
 }
 
 /// Encode a 32-bit unsigned integer as ULEB128 into a stack buffer
 /// @param value The value to encode
 /// @return EncodedValue containing the ULEB128 encoding
-[[nodiscard]] BCS_FORCE_INLINE EncodedValue encode_to_buffer(uint32_t value) noexcept {
+[[nodiscard]] BCS_FORCE_INLINE EncodedValue
+encode_to_buffer(uint32_t value) noexcept {
     EncodedValue result{};
     uint8_t i = 0;
     do {
@@ -85,7 +90,8 @@ struct EncodedValue {
 /// @param size Number of bytes available
 /// @return Pair of (decoded value, number of bytes consumed)
 /// @throws Error on invalid encoding or overflow
-BCS_FORCE_INLINE std::pair<uint32_t, size_t> decode(const uint8_t* data, size_t size) {
+BCS_FORCE_INLINE std::pair<uint32_t, size_t> decode(const uint8_t* data,
+                                                    size_t size) {
     if (BCS_UNLIKELY(size == 0)) {
         throw Error::unexpected_eof();
     }

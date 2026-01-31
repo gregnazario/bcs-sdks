@@ -182,9 +182,11 @@ class BcsSerializer private constructor(initialCapacity: Int) {
     fun writeU16Vector(values: ShortArray): BcsSerializer {
         checkSequenceLength(values.size)
         writeUleb128(values.size)
-        val buf = ByteBuffer.allocate(values.size * 2).order(ByteOrder.LITTLE_ENDIAN)
-        for (v in values) buf.putShort(v)
-        buffer.write(buf.array())
+        // Write directly without intermediate buffer allocation
+        for (v in values) {
+            buffer.write(v.toInt() and 0xFF)
+            buffer.write((v.toInt() shr 8) and 0xFF)
+        }
         return this
     }
     
@@ -194,9 +196,13 @@ class BcsSerializer private constructor(initialCapacity: Int) {
     fun writeU32Vector(values: IntArray): BcsSerializer {
         checkSequenceLength(values.size)
         writeUleb128(values.size)
-        val buf = ByteBuffer.allocate(values.size * 4).order(ByteOrder.LITTLE_ENDIAN)
-        for (v in values) buf.putInt(v)
-        buffer.write(buf.array())
+        // Write directly without intermediate buffer allocation
+        for (v in values) {
+            buffer.write(v and 0xFF)
+            buffer.write((v shr 8) and 0xFF)
+            buffer.write((v shr 16) and 0xFF)
+            buffer.write((v shr 24) and 0xFF)
+        }
         return this
     }
     
@@ -206,9 +212,17 @@ class BcsSerializer private constructor(initialCapacity: Int) {
     fun writeU64Vector(values: LongArray): BcsSerializer {
         checkSequenceLength(values.size)
         writeUleb128(values.size)
-        val buf = ByteBuffer.allocate(values.size * 8).order(ByteOrder.LITTLE_ENDIAN)
-        for (v in values) buf.putLong(v)
-        buffer.write(buf.array())
+        // Write directly without intermediate buffer allocation
+        for (v in values) {
+            buffer.write((v and 0xFF).toInt())
+            buffer.write(((v shr 8) and 0xFF).toInt())
+            buffer.write(((v shr 16) and 0xFF).toInt())
+            buffer.write(((v shr 24) and 0xFF).toInt())
+            buffer.write(((v shr 32) and 0xFF).toInt())
+            buffer.write(((v shr 40) and 0xFF).toInt())
+            buffer.write(((v shr 48) and 0xFF).toInt())
+            buffer.write(((v shr 56) and 0xFF).toInt())
+        }
         return this
     }
 

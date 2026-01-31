@@ -5,6 +5,8 @@ package com.bcs
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
 /**
@@ -129,7 +131,7 @@ class BcsDeserializer(private val data: ByteArray) {
     fun readBytes(): ByteArray {
         val lengthLong = readUleb128()
         if (lengthLong > Int.MAX_VALUE) {
-            throw BcsError.exceededMaxLength(lengthLong.toInt())
+            throw BcsError.exceededMaxLength(lengthLong)
         }
         val length = lengthLong.toInt()
         checkSequenceLength(length)
@@ -138,15 +140,13 @@ class BcsDeserializer(private val data: ByteArray) {
 
     fun readString(): String {
         val bytes = readBytes()
+        // Use CharsetDecoder with strict validation (more efficient than round-trip encoding)
+        val decoder = StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
         return try {
-            String(bytes, StandardCharsets.UTF_8).also { str ->
-                // Verify it's valid UTF-8 by checking if encoding back gives same bytes
-                if (!str.toByteArray(StandardCharsets.UTF_8).contentEquals(bytes)) {
-                    throw BcsError.invalidUtf8()
-                }
-            }
-        } catch (e: Exception) {
-            if (e is BcsError) throw e
+            decoder.decode(ByteBuffer.wrap(bytes)).toString()
+        } catch (e: CharacterCodingException) {
             throw BcsError.invalidUtf8(e.message)
         }
     }
@@ -161,7 +161,7 @@ class BcsDeserializer(private val data: ByteArray) {
     fun readU8Vector(): ByteArray {
         val lengthLong = readUleb128()
         if (lengthLong > Int.MAX_VALUE) {
-            throw BcsError.exceededMaxLength(lengthLong.toInt())
+            throw BcsError.exceededMaxLength(lengthLong)
         }
         val length = lengthLong.toInt()
         checkSequenceLength(length)
@@ -175,7 +175,7 @@ class BcsDeserializer(private val data: ByteArray) {
         val lengthLong = readUleb128()
         // Check for overflow: length * 2 must not overflow Int
         if (lengthLong > Int.MAX_VALUE / 2) {
-            throw BcsError.exceededMaxLength(lengthLong.toInt())
+            throw BcsError.exceededMaxLength(lengthLong)
         }
         val length = lengthLong.toInt()
         checkSequenceLength(length)
@@ -196,7 +196,7 @@ class BcsDeserializer(private val data: ByteArray) {
         val lengthLong = readUleb128()
         // Check for overflow: length * 4 must not overflow Int
         if (lengthLong > Int.MAX_VALUE / 4) {
-            throw BcsError.exceededMaxLength(lengthLong.toInt())
+            throw BcsError.exceededMaxLength(lengthLong)
         }
         val length = lengthLong.toInt()
         checkSequenceLength(length)
@@ -217,7 +217,7 @@ class BcsDeserializer(private val data: ByteArray) {
         val lengthLong = readUleb128()
         // Check for overflow: length * 8 must not overflow Int
         if (lengthLong > Int.MAX_VALUE / 8) {
-            throw BcsError.exceededMaxLength(lengthLong.toInt())
+            throw BcsError.exceededMaxLength(lengthLong)
         }
         val length = lengthLong.toInt()
         checkSequenceLength(length)

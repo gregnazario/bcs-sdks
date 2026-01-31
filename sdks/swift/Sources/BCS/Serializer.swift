@@ -235,14 +235,17 @@ public final class BcsSerializer {
         var entries: [(key: [UInt8], value: [UInt8])] = []
         entries.reserveCapacity(map.count)
 
+        // Reuse single serializer to reduce allocations
+        let tempSer = BcsSerializer()
         for (key, value) in map {
-            let keySer = BcsSerializer()
-            try keySerializer(keySer, key)
+            tempSer.clear()
+            try keySerializer(tempSer, key)
+            let keyBytes = tempSer.toBytes()
 
-            let valueSer = BcsSerializer()
-            try valueSerializer(valueSer, value)
+            tempSer.clear()
+            try valueSerializer(tempSer, value)
 
-            entries.append((key: keySer.toBytes(), value: valueSer.toBytes()))
+            entries.append((key: keyBytes, value: tempSer.toBytes()))
         }
 
         // Sort by key bytes (lexicographic)

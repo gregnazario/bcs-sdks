@@ -19,9 +19,9 @@ const defaultBufferCapacity = 256
 
 // Pre-computed modulus values for signed integer serialization.
 var (
-	serModulus128  *big.Int
-	serModulus256  *big.Int
-	initSerOnce    sync.Once
+	serModulus128 *big.Int
+	serModulus256 *big.Int
+	initSerOnce   sync.Once
 )
 
 func initSerConstants() {
@@ -448,12 +448,18 @@ func (s *Serializer) WriteMapWithSerializer(
 
 	// Serialize keys to get their byte representation for sorting
 	entries := make([]MapEntry, len(keys))
-	tempSer := NewSerializer()
+	// Use pooled serializer to avoid allocation
+	tempSer := AcquireSerializer()
+	defer ReleaseSerializer(tempSer)
 	for i, key := range keys {
 		tempSer.Reset()
 		keySerializer(tempSer, key)
+		// Copy bytes efficiently using make+copy instead of append
+		srcBytes := tempSer.Bytes()
+		keyBytes := make([]byte, len(srcBytes))
+		copy(keyBytes, srcBytes)
 		entries[i] = MapEntry{
-			KeyBytes: append([]byte(nil), tempSer.Bytes()...), // Copy bytes
+			KeyBytes: keyBytes,
 			Value:    values[i],
 		}
 	}
