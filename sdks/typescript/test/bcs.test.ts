@@ -359,8 +359,12 @@ describe("i256 serialization", () => {
   it("basic i256 round-trip", () => {
     const ser = new BcsSerializer();
     ser.writeI256(-1n);
-    expect(bytesToHex(ser.toBytes())).toBe("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-    const des = new BcsDeserializer(hexToBytes("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
+    expect(bytesToHex(ser.toBytes())).toBe(
+      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    );
+    const des = new BcsDeserializer(
+      hexToBytes("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+    );
     expect(des.readI256()).toBe(-1n);
   });
 
@@ -561,7 +565,7 @@ describe("map serialization", () => {
     expect(result.size).toBe(3);
     expect(result.get(1)).toBe(10);
     expect(result.get(2)).toBe(20);
-    expect(result.get(3)).toBe(40);  // 0x28 = 40
+    expect(result.get(3)).toBe(40); // 0x28 = 40
   });
 
   it("reject unsorted map keys", () => {
@@ -667,16 +671,16 @@ describe("container depth", () => {
   it("serializer tracks struct depth", () => {
     const ser = new BcsSerializer();
     expect(ser.containerDepth).toBe(0);
-    
+
     ser.enterStruct();
     expect(ser.containerDepth).toBe(1);
-    
+
     ser.enterStruct();
     expect(ser.containerDepth).toBe(2);
-    
+
     ser.leaveStruct();
     expect(ser.containerDepth).toBe(1);
-    
+
     ser.leaveStruct();
     expect(ser.containerDepth).toBe(0);
   });
@@ -684,10 +688,10 @@ describe("container depth", () => {
   it("serializer tracks enum depth", () => {
     const ser = new BcsSerializer();
     expect(ser.containerDepth).toBe(0);
-    
+
     ser.enterEnum(0);
     expect(ser.containerDepth).toBe(1);
-    
+
     ser.leaveEnum();
     expect(ser.containerDepth).toBe(0);
   });
@@ -695,16 +699,16 @@ describe("container depth", () => {
   it("deserializer tracks struct depth", () => {
     const des = new BcsDeserializer(new Uint8Array(0));
     expect(des.containerDepth).toBe(0);
-    
+
     des.enterStruct();
     expect(des.containerDepth).toBe(1);
-    
+
     des.enterStruct();
     expect(des.containerDepth).toBe(2);
-    
+
     des.leaveStruct();
     expect(des.containerDepth).toBe(1);
-    
+
     des.leaveStruct();
     expect(des.containerDepth).toBe(0);
   });
@@ -714,38 +718,38 @@ describe("container depth", () => {
     const ser = new BcsSerializer();
     ser.writeVariantIndex(5);
     const data = ser.toBytes();
-    
+
     const des = new BcsDeserializer(data);
     const variantIndex = des.enterEnum();
     expect(variantIndex).toBe(5);
     expect(des.containerDepth).toBe(1);
-    
+
     des.leaveEnum();
     expect(des.containerDepth).toBe(0);
   });
 
   it("serializer rejects depth exceeding 500", () => {
     const ser = new BcsSerializer();
-    
+
     // Enter 500 structs (at the limit)
     for (let i = 0; i < 500; i++) {
       ser.enterStruct();
     }
     expect(ser.containerDepth).toBe(500);
-    
+
     // 501st should fail
     expect(() => ser.enterStruct()).toThrow(BcsError);
   });
 
   it("deserializer rejects depth exceeding 500", () => {
     const des = new BcsDeserializer(new Uint8Array(0));
-    
+
     // Enter 500 structs (at the limit)
     for (let i = 0; i < 500; i++) {
       des.enterStruct();
     }
     expect(des.containerDepth).toBe(500);
-    
+
     // 501st should fail
     expect(() => des.enterStruct()).toThrow(BcsError);
   });

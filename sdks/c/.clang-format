@@ -1,5 +1,4 @@
 ---
-Language: C
 BasedOnStyle: Google
 IndentWidth: 4
 ColumnLimit: 88
@@ -69,7 +68,7 @@ SpacesInCStyleCastParentheses: false
 SpacesInContainerLiterals: true
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
-Standard: c++11
+Standard: Latest
 TabWidth: 4
 UseTab: Never
 ...

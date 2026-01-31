@@ -34,11 +34,12 @@ constexpr size_t MAX_BYTES = 5;
 
 /// Small stack-allocated buffer for ULEB128 encoding
 struct EncodedValue {
-    uint8_t data[MAX_BYTES];
+    uint8_t bytes[MAX_BYTES];
     uint8_t len;
 
-    [[nodiscard]] const uint8_t* begin() const noexcept { return data; }
-    [[nodiscard]] const uint8_t* end() const noexcept { return data + len; }
+    [[nodiscard]] const uint8_t* data() const noexcept { return bytes; }
+    [[nodiscard]] const uint8_t* begin() const noexcept { return bytes; }
+    [[nodiscard]] const uint8_t* end() const noexcept { return bytes + len; }
     [[nodiscard]] size_t size() const noexcept { return len; }
 };
 
@@ -71,7 +72,7 @@ encode_to_buffer(uint32_t value) noexcept {
         if (value != 0) {
             byte |= 0x80;
         }
-        result.data[i++] = byte;
+        result.bytes[i++] = byte;
     } while (value != 0);
     result.len = i;
     return result;

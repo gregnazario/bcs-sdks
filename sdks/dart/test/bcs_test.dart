@@ -172,9 +172,7 @@ void main() {
         equals([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]),
       );
       expect(
-        BcsSerializer()
-            .writeI64(BigInt.parse('9223372036854775807'))
-            .toBytes(),
+        BcsSerializer().writeI64(BigInt.parse('9223372036854775807')).toBytes(),
         equals([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f]),
       );
       expect(
@@ -692,8 +690,7 @@ void main() {
     });
 
     test('readBytesView returns view', () {
-      final ser = BcsSerializer()
-        ..writeBytes(Uint8List.fromList([1, 2, 3]));
+      final ser = BcsSerializer()..writeBytes(Uint8List.fromList([1, 2, 3]));
       final data = ser.toBytes();
       final des = BcsDeserializer(data);
       final view = des.readBytesView();

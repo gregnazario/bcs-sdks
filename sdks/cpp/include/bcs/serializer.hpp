@@ -165,7 +165,7 @@ class Serializer {
         // Check for overflow before addition
         if (uleb_size > SIZE_MAX - len ||
             current_size > SIZE_MAX - uleb_size - len) {
-            throw Error::exceeded_max_length(len);
+            throw Error::exceeded_max_length(len, SIZE_MAX);
         }
         buffer_.reserve(current_size + uleb_size + len);
         write_uleb128(static_cast<uint32_t>(len));
