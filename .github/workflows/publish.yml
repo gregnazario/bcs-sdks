@@ -17,7 +17,7 @@ on:
       - 'c-v*'
       - 'zig-v*'
       - 'dart-v*'
-      - 'ocaml-v*'
+      # - 'ocaml-v*'  # Disabled - see ci.yml
 
 # Default minimal permissions - jobs override as needed
 permissions:
@@ -285,17 +285,17 @@ jobs:
         working-directory: sdks/dart
 
   # =============================================================================
-  # OCAML - OPAM
+  # OCAML - OPAM (disabled due to ocaml/setup-ocaml action incompatibility with Ubuntu 24.04)
   # =============================================================================
   
-  publish-ocaml:
-    name: Publish OCaml to OPAM
-    if: startsWith(github.ref, 'refs/tags/ocaml-v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Create OPAM PR
-        run: |
-          echo "OPAM packages are published via PR to opam-repository"
-          echo "See: https://github.com/ocaml/opam-repository"
+  # publish-ocaml:
+  #   name: Publish OCaml to OPAM
+  #   if: startsWith(github.ref, 'refs/tags/ocaml-v')
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Create OPAM PR
+  #       run: |
+  #         echo "OPAM packages are published via PR to opam-repository"
+  #         echo "See: https://github.com/ocaml/opam-repository"
 
