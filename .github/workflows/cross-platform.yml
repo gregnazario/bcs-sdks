@@ -497,8 +497,12 @@ jobs:
         working-directory: sdks/csharp
 
       - name: Build
-        run: dotnet build --configuration Release --no-restore -r ${{ matrix.rid }}
+        run: dotnet build --configuration Release --no-restore
         working-directory: sdks/csharp
+
+      - name: Publish for target
+        run: dotnet publish --configuration Release --no-restore -r ${{ matrix.rid }} --self-contained false
+        working-directory: sdks/csharp/Bcs
 
       - name: Test
         if: matrix.test

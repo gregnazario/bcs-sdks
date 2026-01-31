@@ -32,15 +32,17 @@ TEST_VECTORS := ../../test-vectors
 all: format-check lint test
 
 # Build library
-build: $(STATIC_LIB)
+build: $(BUILD_DIR) $(STATIC_LIB)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(BUILD_DIR)/bcs.o: $(SRCS) $(INCLUDE_DIR)/bcs/bcs.h | $(BUILD_DIR)
+$(BUILD_DIR)/bcs.o: $(SRCS) $(INCLUDE_DIR)/bcs/bcs.h
+	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $(SRCS) -o $@
 
 $(STATIC_LIB): $(OBJS)
+	@mkdir -p $(BUILD_DIR)
 	ar rcs $@ $^
 
 # Build tests
