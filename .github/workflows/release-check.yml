@@ -5,6 +5,10 @@ on:
     tags:
       - '*-v*'
 
+# Minimal permissions for security
+permissions:
+  contents: read
+
 # Cancel in-progress runs on new commits to same tag
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
