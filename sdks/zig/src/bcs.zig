@@ -373,9 +373,9 @@ pub const Serializer = struct {
     /// Write any integer type in BCS format (little-endian)
     pub fn writeInt(self: *Self, comptime T: type, value: T) Error!void {
         const info = @typeInfo(T);
-        if (info != .int) @compileError("writeInt requires an integer type");
+        if (info != .Int) @compileError("writeInt requires an integer type");
 
-        const bits = info.int.bits;
+        const bits = info.Int.bits;
         const bytes = @divExact(bits, 8);
 
         if (bytes == 1) {
@@ -401,9 +401,9 @@ pub const Serializer = struct {
         try self.writeUleb128(@intCast(values.len));
 
         const info = @typeInfo(T);
-        if (info != .int) @compileError("writeIntVector requires an integer type");
+        if (info != .Int) @compileError("writeIntVector requires an integer type");
 
-        const bytes_per_elem = @divExact(info.int.bits, 8);
+        const bytes_per_elem = @divExact(info.Int.bits, 8);
 
         // Check for overflow before multiplication
         const total_bytes = std.math.mul(usize, values.len, bytes_per_elem) catch {
@@ -682,9 +682,9 @@ pub const Deserializer = struct {
     /// Read any integer type in BCS format (little-endian)
     pub fn readInt(self: *Self, comptime T: type) Error!T {
         const info = @typeInfo(T);
-        if (info != .int) @compileError("readInt requires an integer type");
+        if (info != .Int) @compileError("readInt requires an integer type");
 
-        const bits = info.int.bits;
+        const bits = info.Int.bits;
         const bytes = @divExact(bits, 8);
 
         if (bytes == 1) {
