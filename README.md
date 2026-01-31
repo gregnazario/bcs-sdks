@@ -1,6 +1,11 @@
 # BCS Multi-Language SDKs
 
-[![CI](https://github.com/bcs-sdks/bcs-sdks/actions/workflows/ci.yml/badge.svg)](https://github.com/bcs-sdks/bcs-sdks/actions/workflows/ci.yml)
+[![CI](https://github.com/gregnazario/bcs-sdks/actions/workflows/ci.yml/badge.svg)](https://github.com/gregnazario/bcs-sdks/actions/workflows/ci.yml)
+[![Coverage](https://github.com/gregnazario/bcs-sdks/actions/workflows/coverage.yml/badge.svg)](https://github.com/gregnazario/bcs-sdks/actions/workflows/coverage.yml)
+[![Cross-Platform](https://github.com/gregnazario/bcs-sdks/actions/workflows/cross-platform.yml/badge.svg)](https://github.com/gregnazario/bcs-sdks/actions/workflows/cross-platform.yml)
+[![Benchmarks](https://github.com/gregnazario/bcs-sdks/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/gregnazario/bcs-sdks/actions/workflows/benchmarks.yml)
+[![codecov](https://codecov.io/gh/gregnazario/bcs-sdks/graph/badge.svg)](https://codecov.io/gh/gregnazario/bcs-sdks)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 Binary Canonical Serialization (BCS) implementations across 15 programming languages.
 
