@@ -110,7 +110,7 @@ pub fn decodeUleb128(data: []const u8) Error!struct { value: u32, bytes_read: us
 
         const byte = data[i];
         const digit: u32 = @as(u32, byte & 0x7F);
-        value |= digit << shift;
+        value |= digit << @as(u5, @intCast(shift));
         i += 1;
 
         if (byte & 0x80 == 0) {
