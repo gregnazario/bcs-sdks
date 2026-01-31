@@ -22,7 +22,7 @@
 /// final flag = des.readBool();
 /// des.checkEnd();
 /// ```
-library bcs;
+library;
 
 export 'src/constants.dart';
 export 'src/deserializer.dart';

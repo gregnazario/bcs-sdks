@@ -6,6 +6,10 @@ import 'uleb128.dart';
 
 /// BCS Serializer - Manual serialization API
 class BcsSerializer {
+  /// Create a serializer with optional initial capacity
+  BcsSerializer([int initialCapacity = 256])
+      : _buffer = Uint8List(initialCapacity);
+
   /// Internal buffer with dynamic growth
   Uint8List _buffer;
   int _size = 0;
@@ -13,10 +17,6 @@ class BcsSerializer {
 
   /// Scratch buffer for ULEB128 encoding
   final Uint8List _ulebBuffer = Uint8List(Uleb128.maxBytes);
-
-  /// Create a serializer with optional initial capacity
-  BcsSerializer([int initialCapacity = 256])
-      : _buffer = Uint8List(initialCapacity);
 
   /// Ensure buffer has capacity for [needed] more bytes
   void _ensureCapacity(int needed) {
@@ -31,9 +31,8 @@ class BcsSerializer {
     // Guard against overflow in capacity calculation
     var newCapacity = _buffer.length * 2;
     if (newCapacity < 0 || newCapacity < required) newCapacity = required;
-    final newBuffer = Uint8List(newCapacity);
-    newBuffer.setRange(0, _size, _buffer);
-    _buffer = newBuffer;
+    final oldBuffer = _buffer;
+    _buffer = Uint8List(newCapacity)..setRange(0, _size, oldBuffer);
   }
 
   // ==========================================================================

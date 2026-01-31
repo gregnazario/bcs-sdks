@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import struct
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from .errors import (
     ExceededContainerDepth,
@@ -402,7 +403,7 @@ class BcsDeserializer:
     # OPTION
     # =========================================================================
 
-    def read_option(self, deserializer: Callable[["BcsDeserializer"], T]) -> T | None:
+    def read_option(self, deserializer: Callable[[BcsDeserializer], T]) -> T | None:
         """Deserialize an optional value.
 
         Args:
@@ -459,7 +460,7 @@ class BcsDeserializer:
     # VECTOR
     # =========================================================================
 
-    def read_vector(self, deserializer: Callable[["BcsDeserializer"], T]) -> list[T]:
+    def read_vector(self, deserializer: Callable[[BcsDeserializer], T]) -> list[T]:
         """Deserialize a vector of values.
 
         Args:
@@ -553,8 +554,8 @@ class BcsDeserializer:
 
     def read_map(
         self,
-        key_deserializer: Callable[["BcsDeserializer"], Any],
-        value_deserializer: Callable[["BcsDeserializer"], Any],
+        key_deserializer: Callable[[BcsDeserializer], Any],
+        value_deserializer: Callable[[BcsDeserializer], Any],
     ) -> dict[Any, Any]:
         """Deserialize a map (verifying sorted keys).
 

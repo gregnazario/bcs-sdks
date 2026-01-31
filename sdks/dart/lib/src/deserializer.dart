@@ -274,7 +274,7 @@ class BcsDeserializer {
     final length = readUleb128();
     _checkSequenceLength(length);
     // Pre-allocate list with known size for better performance
-    final result = List<T>.filled(length, null as T, growable: false);
+    final result = List<T>.filled(length, null as T);
     for (var i = 0; i < length; i++) {
       result[i] = deserializer(this);
     }

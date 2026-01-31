@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 # Maximum sequence length (2^31 - 1)
 MAX_SEQUENCE_LENGTH = (1 << 31) - 1

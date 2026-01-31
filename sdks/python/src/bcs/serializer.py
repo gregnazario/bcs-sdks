@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import struct
-from typing import Any, Callable, Sequence, TypeVar
+from collections.abc import Callable, Sequence
+from typing import Any, TypeVar
 
 from .errors import ExceededContainerDepth, ExceededMaxLength
 from .types import (
@@ -97,7 +98,7 @@ class BcsSerializer:
     # BOOLEAN
     # =========================================================================
 
-    def write_bool(self, value: bool) -> "BcsSerializer":
+    def write_bool(self, value: bool) -> BcsSerializer:
         """Serialize a boolean.
 
         Args:
@@ -113,7 +114,7 @@ class BcsSerializer:
     # UNSIGNED INTEGERS
     # =========================================================================
 
-    def write_u8(self, value: int) -> "BcsSerializer":
+    def write_u8(self, value: int) -> BcsSerializer:
         """Serialize an unsigned 8-bit integer.
 
         Args:
@@ -130,7 +131,7 @@ class BcsSerializer:
         self._buffer.append(value)
         return self
 
-    def write_u16(self, value: int) -> "BcsSerializer":
+    def write_u16(self, value: int) -> BcsSerializer:
         """Serialize an unsigned 16-bit integer (little-endian).
 
         Args:
@@ -147,7 +148,7 @@ class BcsSerializer:
         self._buffer += _STRUCT_U16.pack(value)
         return self
 
-    def write_u32(self, value: int) -> "BcsSerializer":
+    def write_u32(self, value: int) -> BcsSerializer:
         """Serialize an unsigned 32-bit integer (little-endian).
 
         Args:
@@ -164,7 +165,7 @@ class BcsSerializer:
         self._buffer += _STRUCT_U32.pack(value)
         return self
 
-    def write_u64(self, value: int) -> "BcsSerializer":
+    def write_u64(self, value: int) -> BcsSerializer:
         """Serialize an unsigned 64-bit integer (little-endian).
 
         Args:
@@ -181,7 +182,7 @@ class BcsSerializer:
         self._buffer += _STRUCT_U64.pack(value)
         return self
 
-    def write_u128(self, value: int) -> "BcsSerializer":
+    def write_u128(self, value: int) -> BcsSerializer:
         """Serialize an unsigned 128-bit integer (little-endian).
 
         Args:
@@ -198,7 +199,7 @@ class BcsSerializer:
         self._buffer += value.to_bytes(16, "little")
         return self
 
-    def write_u256(self, value: int) -> "BcsSerializer":
+    def write_u256(self, value: int) -> BcsSerializer:
         """Serialize an unsigned 256-bit integer (little-endian).
 
         Args:
@@ -219,7 +220,7 @@ class BcsSerializer:
     # SIGNED INTEGERS (two's complement)
     # =========================================================================
 
-    def write_i8(self, value: int) -> "BcsSerializer":
+    def write_i8(self, value: int) -> BcsSerializer:
         """Serialize a signed 8-bit integer (two's complement).
 
         Args:
@@ -236,7 +237,7 @@ class BcsSerializer:
         self._buffer.append(value & 0xFF)
         return self
 
-    def write_i16(self, value: int) -> "BcsSerializer":
+    def write_i16(self, value: int) -> BcsSerializer:
         """Serialize a signed 16-bit integer (two's complement, little-endian).
 
         Args:
@@ -253,7 +254,7 @@ class BcsSerializer:
         self._buffer += _STRUCT_I16.pack(value)
         return self
 
-    def write_i32(self, value: int) -> "BcsSerializer":
+    def write_i32(self, value: int) -> BcsSerializer:
         """Serialize a signed 32-bit integer (two's complement, little-endian).
 
         Args:
@@ -270,7 +271,7 @@ class BcsSerializer:
         self._buffer += _STRUCT_I32.pack(value)
         return self
 
-    def write_i64(self, value: int) -> "BcsSerializer":
+    def write_i64(self, value: int) -> BcsSerializer:
         """Serialize a signed 64-bit integer (two's complement, little-endian).
 
         Args:
@@ -287,7 +288,7 @@ class BcsSerializer:
         self._buffer += _STRUCT_I64.pack(value)
         return self
 
-    def write_i128(self, value: int) -> "BcsSerializer":
+    def write_i128(self, value: int) -> BcsSerializer:
         """Serialize a signed 128-bit integer (two's complement, little-endian).
 
         Args:
@@ -304,7 +305,7 @@ class BcsSerializer:
         self._buffer += value.to_bytes(16, "little", signed=True)
         return self
 
-    def write_i256(self, value: int) -> "BcsSerializer":
+    def write_i256(self, value: int) -> BcsSerializer:
         """Serialize a signed 256-bit integer (two's complement, little-endian).
 
         Args:
@@ -325,7 +326,7 @@ class BcsSerializer:
     # ULEB128
     # =========================================================================
 
-    def write_uleb128(self, value: int) -> "BcsSerializer":
+    def write_uleb128(self, value: int) -> BcsSerializer:
         """Serialize a ULEB128-encoded unsigned integer.
 
         Args:
@@ -351,7 +352,7 @@ class BcsSerializer:
     # BYTES AND STRINGS
     # =========================================================================
 
-    def write_bytes(self, value: bytes | bytearray) -> "BcsSerializer":
+    def write_bytes(self, value: bytes | bytearray) -> BcsSerializer:
         """Serialize a byte array (length-prefixed with ULEB128).
 
         Args:
@@ -370,7 +371,7 @@ class BcsSerializer:
         self._buffer += value
         return self
 
-    def write_string(self, value: str) -> "BcsSerializer":
+    def write_string(self, value: str) -> BcsSerializer:
         """Serialize a UTF-8 string (length-prefixed with ULEB128).
 
         Args:
@@ -387,7 +388,7 @@ class BcsSerializer:
         self._buffer += encoded
         return self
 
-    def write_fixed_bytes(self, value: bytes | bytearray, length: int) -> "BcsSerializer":
+    def write_fixed_bytes(self, value: bytes | bytearray, length: int) -> BcsSerializer:
         """Serialize fixed-length bytes (no length prefix).
 
         Args:
@@ -410,8 +411,8 @@ class BcsSerializer:
     # =========================================================================
 
     def write_option(
-        self, value: T | None, serializer: Callable[["BcsSerializer", T], None]
-    ) -> "BcsSerializer":
+        self, value: T | None, serializer: Callable[[BcsSerializer, T], None]
+    ) -> BcsSerializer:
         """Serialize an optional value.
 
         Args:
@@ -428,15 +429,15 @@ class BcsSerializer:
             serializer(self, value)
         return self
 
-    def write_option_u8(self, value: int | None) -> "BcsSerializer":
+    def write_option_u8(self, value: int | None) -> BcsSerializer:
         """Serialize an optional u8."""
         return self.write_option(value, lambda s, v: s.write_u8(v))
 
-    def write_option_u64(self, value: int | None) -> "BcsSerializer":
+    def write_option_u64(self, value: int | None) -> BcsSerializer:
         """Serialize an optional u64."""
         return self.write_option(value, lambda s, v: s.write_u64(v))
 
-    def write_option_string(self, value: str | None) -> "BcsSerializer":
+    def write_option_string(self, value: str | None) -> BcsSerializer:
         """Serialize an optional string."""
         return self.write_option(value, lambda s, v: s.write_string(v))
 
@@ -445,8 +446,8 @@ class BcsSerializer:
     # =========================================================================
 
     def write_vector(
-        self, values: Sequence[T], serializer: Callable[["BcsSerializer", T], None]
-    ) -> "BcsSerializer":
+        self, values: Sequence[T], serializer: Callable[[BcsSerializer, T], None]
+    ) -> BcsSerializer:
         """Serialize a vector of values.
 
         Args:
@@ -466,7 +467,7 @@ class BcsSerializer:
             serializer(self, value)
         return self
 
-    def write_vector_u8(self, values: Sequence[int]) -> "BcsSerializer":
+    def write_vector_u8(self, values: Sequence[int]) -> BcsSerializer:
         """Serialize a vector of u8 (optimized)."""
         length = len(values)
         if length > MAX_SEQUENCE_LENGTH:
@@ -483,7 +484,7 @@ class BcsSerializer:
             self._buffer += bytes(values)
         return self
 
-    def write_vector_u64(self, values: Sequence[int]) -> "BcsSerializer":
+    def write_vector_u64(self, values: Sequence[int]) -> BcsSerializer:
         """Serialize a vector of u64 (optimized)."""
         length = len(values)
         if length > MAX_SEQUENCE_LENGTH:
@@ -497,7 +498,7 @@ class BcsSerializer:
             buf += pack(v)
         return self
 
-    def write_vector_string(self, values: Sequence[str]) -> "BcsSerializer":
+    def write_vector_string(self, values: Sequence[str]) -> BcsSerializer:
         """Serialize a vector of strings."""
         return self.write_vector(values, lambda s, v: s.write_string(v))
 
@@ -505,7 +506,7 @@ class BcsSerializer:
     # ENUM
     # =========================================================================
 
-    def write_variant_index(self, index: int) -> "BcsSerializer":
+    def write_variant_index(self, index: int) -> BcsSerializer:
         """Write an enum variant index (ULEB128).
 
         Args:
@@ -518,7 +519,7 @@ class BcsSerializer:
         self.write_uleb128(index)
         return self
 
-    def leave_enum(self) -> "BcsSerializer":
+    def leave_enum(self) -> BcsSerializer:
         """Signal end of enum serialization (for depth tracking)."""
         self._leave_container()
         return self
@@ -527,7 +528,7 @@ class BcsSerializer:
     # STRUCT
     # =========================================================================
 
-    def enter_struct(self, name: str = "") -> "BcsSerializer":
+    def enter_struct(self, name: str = "") -> BcsSerializer:
         """Signal start of struct serialization (for depth tracking).
 
         Args:
@@ -539,7 +540,7 @@ class BcsSerializer:
         self._check_depth(name)
         return self
 
-    def leave_struct(self) -> "BcsSerializer":
+    def leave_struct(self) -> BcsSerializer:
         """Signal end of struct serialization (for depth tracking)."""
         self._leave_container()
         return self
@@ -551,9 +552,9 @@ class BcsSerializer:
     def write_map(
         self,
         items: dict[Any, Any],
-        key_serializer: Callable[["BcsSerializer", Any], None],
-        value_serializer: Callable[["BcsSerializer", Any], None],
-    ) -> "BcsSerializer":
+        key_serializer: Callable[[BcsSerializer, Any], None],
+        value_serializer: Callable[[BcsSerializer, Any], None],
+    ) -> BcsSerializer:
         """Serialize a map (sorted by key bytes).
 
         Args:
@@ -581,7 +582,7 @@ class BcsSerializer:
 
         # Write length and sorted entries
         self.write_uleb128(len(key_bytes_pairs))
-        for key_bytes, key, value in key_bytes_pairs:
+        for key_bytes, _key, value in key_bytes_pairs:
             self._buffer += key_bytes
             value_serializer(self, value)
 
