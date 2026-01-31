@@ -134,7 +134,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
       - name: Generate coverage with Kover
-        run: ./gradlew koverXmlReport || ./gradlew test
+        run: gradle koverXmlReport || gradle test
         working-directory: sdks/kotlin
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4
@@ -191,9 +191,8 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
-          bundler-cache: true
           working-directory: sdks/ruby
-      - name: Install simplecov
+      - name: Install dependencies with simplecov
         run: |
           echo "gem 'simplecov', require: false" >> Gemfile
           bundle install
@@ -201,7 +200,7 @@ jobs:
       - name: Generate coverage
         run: |
           echo "require 'simplecov'; SimpleCov.start" | cat - spec/bcs_spec.rb > temp && mv temp spec/bcs_spec.rb
-          ruby -Ilib:spec spec/bcs_spec.rb
+          bundle exec ruby -Ilib:spec spec/bcs_spec.rb
         working-directory: sdks/ruby
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4
