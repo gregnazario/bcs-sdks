@@ -47,11 +47,11 @@ defmodule Bcs.Serializer do
   @i16_max 32_767
   @i32_min -2_147_483_648
   @i32_max 2_147_483_647
-  @i64_min -(1 <<< 63)
+  @i64_min - (1 <<< 63)
   @i64_max (1 <<< 63) - 1
-  @i128_min -(1 <<< 127)
+  @i128_min - (1 <<< 127)
   @i128_max (1 <<< 127) - 1
-  @i256_min -(1 <<< 255)
+  @i256_min - (1 <<< 255)
   @i256_max (1 <<< 255) - 1
 
   # Using iodata for efficient accumulation, converted to binary on to_bytes/1

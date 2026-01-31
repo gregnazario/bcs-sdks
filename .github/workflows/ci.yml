@@ -42,7 +42,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: make deps
         working-directory: sdks/python
       - name: Format check
         run: make format-check
