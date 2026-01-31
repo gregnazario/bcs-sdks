@@ -12,6 +12,10 @@ on:
         required: false
         default: 'true'
 
+# Minimal permissions for security
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
