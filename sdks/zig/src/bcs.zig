@@ -143,7 +143,7 @@ pub fn uleb128Size(value: u32) usize {
 
 /// BCS Serializer
 pub const Serializer = struct {
-    buffer: std.ArrayList(u8),
+    buffer: std.ArrayListUnmanaged(u8),
     allocator: Allocator,
     depth: u16 = 0,
 
@@ -159,7 +159,7 @@ pub const Serializer = struct {
 
     /// Initialize with pre-allocated capacity to reduce allocations
     pub fn initCapacity(allocator: Allocator, capacity: usize) Allocator.Error!Self {
-        var buffer = std.ArrayList(u8){};
+        var buffer = std.ArrayListUnmanaged(u8){};
         try buffer.ensureTotalCapacity(allocator, capacity);
         return .{
             .buffer = buffer,
@@ -700,9 +700,9 @@ pub const Deserializer = struct {
     // --------------------------------------------------------------------
 
     /// Read a vector of integers into an ArrayList - allocating version
-    pub fn readIntVector(self: *Self, comptime T: type, allocator: Allocator) (Error || Allocator.Error)!std.ArrayList(T) {
+    pub fn readIntVector(self: *Self, comptime T: type, allocator: Allocator) (Error || Allocator.Error)!std.ArrayListUnmanaged(T) {
         const len = try self.readVectorLen();
-        var result = std.ArrayList(T){};
+        var result = std.ArrayListUnmanaged(T){};
         try result.ensureTotalCapacity(allocator, len);
 
         var i: u32 = 0;
