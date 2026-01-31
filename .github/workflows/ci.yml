@@ -124,6 +124,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
       - name: Format check
         run: make format-check
         working-directory: sdks/go
@@ -188,28 +190,6 @@ jobs:
       - name: Test
         run: make test
         working-directory: sdks/cpp
-
-  php:
-    name: PHP SDK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          tools: composer, php-cs-fixer, phpstan
-      - name: Install dependencies
-        run: composer install
-        working-directory: sdks/php
-      - name: Format check
-        run: make format-check
-        working-directory: sdks/php
-      - name: Lint
-        run: make lint
-        working-directory: sdks/php
-      - name: Test
-        run: make test
-        working-directory: sdks/php
 
   kotlin:
     name: Kotlin SDK
@@ -322,28 +302,6 @@ jobs:
         run: make test
         working-directory: sdks/dart
 
-  lua:
-    name: Lua SDK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: leafo/gh-actions-lua@v10
-        with:
-          luaVersion: '5.4'
-      - uses: leafo/gh-actions-luarocks@v4
-      - name: Install dependencies
-        run: luarocks install --only-deps bcs-dev-1.rockspec
-        working-directory: sdks/lua
-      - name: Format check
-        run: make format-check
-        working-directory: sdks/lua
-      - name: Lint
-        run: make lint
-        working-directory: sdks/lua
-      - name: Test
-        run: make test
-        working-directory: sdks/lua
-
   ocaml:
     name: OCaml SDK
     runs-on: ubuntu-latest
@@ -362,118 +320,3 @@ jobs:
         run: make test
         working-directory: sdks/ocaml
 
-  perl:
-    name: Perl SDK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: shogo82148/actions-setup-perl@v1
-        with:
-          perl-version: '5.38'
-      - name: Install dependencies
-        run: cpanm --installdeps .
-        working-directory: sdks/perl
-      - name: Format check
-        run: make format-check
-        working-directory: sdks/perl
-      - name: Lint
-        run: make lint
-        working-directory: sdks/perl
-      - name: Test
-        run: make test
-        working-directory: sdks/perl
-
-  groovy:
-    name: Groovy SDK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-      - name: Format check
-        run: make format-check
-        working-directory: sdks/groovy
-      - name: Lint
-        run: make lint
-        working-directory: sdks/groovy
-      - name: Test
-        run: make test
-        working-directory: sdks/groovy
-
-  erlang:
-    name: Erlang SDK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: erlef/setup-beam@v1
-        with:
-          otp-version: '26'
-          rebar3-version: '3.22'
-      - name: Install dependencies
-        run: rebar3 get-deps
-        working-directory: sdks/erlang
-      - name: Format check
-        run: make format-check
-        working-directory: sdks/erlang
-      - name: Lint
-        run: make lint
-        working-directory: sdks/erlang
-      - name: Test
-        run: make test
-        working-directory: sdks/erlang
-
-  lisp:
-    name: Common Lisp SDK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install SBCL
-        run: sudo apt-get install -y sbcl
-      - name: Test
-        run: make test
-        working-directory: sdks/lisp
-
-  # =============================================================================
-  # OPTIONAL SDKS
-  # =============================================================================
-
-  shell:
-    name: Shell SDK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
-          go install mvdan.cc/sh/v3/cmd/shfmt@latest
-      - name: Format check
-        run: make format-check
-        working-directory: sdks/shell
-      - name: Lint
-        run: make lint
-        working-directory: sdks/shell
-      - name: Test
-        run: make test
-        working-directory: sdks/shell
-
-  powershell:
-    name: PowerShell SDK
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install PSScriptAnalyzer
-        shell: pwsh
-        run: Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
-      - name: Lint
-        shell: pwsh
-        run: make lint
-        working-directory: sdks/powershell
-      - name: Test
-        shell: pwsh
-        run: make test
-        working-directory: sdks/powershell

@@ -5,6 +5,7 @@ require "json"
 require_relative "../lib/bcs"
 
 class BCSTest < Minitest::Test
+
   # ============================================================================
   # ULEB128 Tests
   # ============================================================================
@@ -109,10 +110,10 @@ class BCSTest < Minitest::Test
     ser.write_i32(-1)
     assert_equal [0xff, 0xff, 0xff, 0xff], ser.to_bytes
 
-    ser.clear.write_i32(2_147_483_647)  # max
+    ser.clear.write_i32(2_147_483_647) # max
     assert_equal [0xff, 0xff, 0xff, 0x7f], ser.to_bytes
 
-    ser.clear.write_i32(-2_147_483_648)  # min
+    ser.clear.write_i32(-2_147_483_648) # min
     assert_equal [0x00, 0x00, 0x00, 0x80], ser.to_bytes
   end
 
@@ -121,10 +122,10 @@ class BCSTest < Minitest::Test
     ser.write_i64(-1)
     assert_equal [0xff] * 8, ser.to_bytes
 
-    ser.clear.write_i64(9_223_372_036_854_775_807)  # max
+    ser.clear.write_i64(9_223_372_036_854_775_807) # max
     assert_equal [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f], ser.to_bytes
 
-    ser.clear.write_i64(-9_223_372_036_854_775_808)  # min
+    ser.clear.write_i64(-9_223_372_036_854_775_808) # min
     assert_equal [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80], ser.to_bytes
   end
 
@@ -298,9 +299,9 @@ class BCSTest < Minitest::Test
     ser = BCS::Serializer.new
     map = { 1 => 10, 2 => 20, 3 => 30 }
     ser.write_map(map) { |s, k| s.write_u8(k) }
-        .tap do |s|
-          # Note: we need to write values separately in this simple implementation
-        end
+       .tap do |s|
+      # NOTE: we need to write values separately in this simple implementation
+    end
 
     # For a complete map serialization, we'd need both key and value serializers
     # This test just verifies the basic structure
@@ -430,7 +431,7 @@ class BCSTest < Minitest::Test
   end
 
   def test_u64_array_round_trip
-    values = [0, 100, 0xFFFFFFFFFFFFFFFF, 12345, 999_999_999]
+    values = [0, 100, 0xFFFFFFFFFFFFFFFF, 12_345, 999_999_999]
     ser = BCS::Serializer.new
     ser.write_u64_array(values)
     bytes = ser.to_bytes
@@ -458,27 +459,28 @@ class BCSTest < Minitest::Test
   def test_serializer_pool
     # Acquire and use
     ser = BCS.acquire_serializer
-    ser.write_u64(12345)
+    ser.write_u64(12_345)
     bytes1 = ser.to_bytes
     BCS.release_serializer(ser)
 
     # Acquire again (should get the same instance from pool)
     ser2 = BCS.acquire_serializer
-    assert_equal 0, ser2.size  # Should be cleared
-    ser2.write_u64(67890)
+    assert_equal 0, ser2.size # Should be cleared
+    ser2.write_u64(67_890)
     bytes2 = ser2.to_bytes
     BCS.release_serializer(ser2)
 
     # Verify both serializations worked
-    assert_equal 12345, BCS.deserialize_u64(bytes1)
-    assert_equal 67890, BCS.deserialize_u64(bytes2)
+    assert_equal 12_345, BCS.deserialize_u64(bytes1)
+    assert_equal 67_890, BCS.deserialize_u64(bytes2)
   end
 
   def test_with_serializer_block
     bytes = BCS.with_serializer do |ser|
-      ser.write_u64(99999)
+      ser.write_u64(99_999)
       ser.to_bytes
     end
-    assert_equal 99999, BCS.deserialize_u64(bytes)
+    assert_equal 99_999, BCS.deserialize_u64(bytes)
   end
+
 end
