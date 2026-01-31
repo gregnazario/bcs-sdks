@@ -28,7 +28,6 @@ jobs:
   rust-bench:
     name: Rust Benchmarks
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/rust/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -44,7 +43,6 @@ jobs:
   go-bench:
     name: Go Benchmarks
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/go/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -62,7 +60,6 @@ jobs:
   python-bench:
     name: Python Benchmarks
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/python/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -110,7 +107,6 @@ jobs:
   typescript-bench:
     name: TypeScript Benchmarks
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/typescript/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -169,7 +165,6 @@ jobs:
   java-bench:
     name: Java Benchmarks
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/java/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -193,7 +188,6 @@ jobs:
   cpp-bench:
     name: C++ Benchmarks
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/cpp/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install tools

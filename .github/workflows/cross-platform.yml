@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # Minimal permissions for security
 permissions:
@@ -23,7 +24,6 @@ jobs:
   rust-cross:
     name: Rust (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
-    if: ${{ hashFiles('sdks/rust/**') != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -112,7 +112,6 @@ jobs:
   go-cross:
     name: Go (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ${{ matrix.os }}
-    if: ${{ hashFiles('sdks/go/**') != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -179,7 +178,6 @@ jobs:
   zig-cross:
     name: Zig (${{ matrix.target }})
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/zig/**') != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -225,7 +223,6 @@ jobs:
   zig-native:
     name: Zig Native (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    if: ${{ hashFiles('sdks/zig/**') != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -252,7 +249,6 @@ jobs:
   c-cross:
     name: C (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-    if: ${{ hashFiles('sdks/c/**') != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -329,7 +325,6 @@ jobs:
   c-wasm:
     name: C (wasm-emscripten)
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/c/**') != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -352,7 +347,6 @@ jobs:
   cpp-cross:
     name: C++ (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-    if: ${{ hashFiles('sdks/cpp/**') != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -434,7 +428,6 @@ jobs:
   cpp-wasm:
     name: C++ (wasm-emscripten)
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/cpp/**') != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -458,7 +451,6 @@ jobs:
   csharp-cross:
     name: C# (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-    if: ${{ hashFiles('sdks/csharp/**') != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -520,7 +512,6 @@ jobs:
   swift-cross:
     name: Swift (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
-    if: ${{ hashFiles('sdks/swift/**') != '' }}
     strategy:
       fail-fast: false
       matrix:

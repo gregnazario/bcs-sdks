@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # Minimal permissions for security
 permissions:
@@ -35,7 +36,6 @@ jobs:
   python:
     name: Python SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/python/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -57,7 +57,6 @@ jobs:
   typescript:
     name: TypeScript SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/typescript/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -79,7 +78,6 @@ jobs:
   elixir:
     name: Elixir SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/elixir/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
@@ -102,7 +100,6 @@ jobs:
   java:
     name: Java SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/java/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -122,7 +119,6 @@ jobs:
   go:
     name: Go SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/go/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -141,7 +137,6 @@ jobs:
   csharp:
     name: C# SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/csharp/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -160,7 +155,6 @@ jobs:
   rust:
     name: Rust SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/rust/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -179,7 +173,6 @@ jobs:
   cpp:
     name: C++ SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/cpp/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
@@ -199,7 +192,6 @@ jobs:
   php:
     name: PHP SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/php/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -222,7 +214,6 @@ jobs:
   kotlin:
     name: Kotlin SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/kotlin/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -244,7 +235,6 @@ jobs:
   swift:
     name: Swift SDK
     runs-on: macos-latest
-    if: ${{ hashFiles('sdks/swift/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Format check
@@ -260,7 +250,6 @@ jobs:
   ruby:
     name: Ruby SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/ruby/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: ruby/setup-ruby@v1
@@ -281,7 +270,6 @@ jobs:
   c:
     name: C SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/c/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
@@ -301,7 +289,6 @@ jobs:
   zig:
     name: Zig SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/zig/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: goto-bus-stop/setup-zig@v2
@@ -317,7 +304,6 @@ jobs:
   dart:
     name: Dart SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/dart/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
@@ -339,7 +325,6 @@ jobs:
   lua:
     name: Lua SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/lua/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: leafo/gh-actions-lua@v10
@@ -362,7 +347,6 @@ jobs:
   ocaml:
     name: OCaml SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/ocaml/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: ocaml/setup-ocaml@v2
@@ -381,7 +365,6 @@ jobs:
   perl:
     name: Perl SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/perl/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: shogo82148/actions-setup-perl@v1
@@ -403,7 +386,6 @@ jobs:
   groovy:
     name: Groovy SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/groovy/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -425,7 +407,6 @@ jobs:
   erlang:
     name: Erlang SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/erlang/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
@@ -448,7 +429,6 @@ jobs:
   lisp:
     name: Common Lisp SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/lisp/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install SBCL
@@ -464,7 +444,6 @@ jobs:
   shell:
     name: Shell SDK
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('sdks/shell/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install tools
@@ -485,7 +464,6 @@ jobs:
   powershell:
     name: PowerShell SDK
     runs-on: windows-latest
-    if: ${{ hashFiles('sdks/powershell/**') != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install PSScriptAnalyzer
