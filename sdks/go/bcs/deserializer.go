@@ -604,7 +604,12 @@ func (d *Deserializer) ReadU16Slice() ([]uint16, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := d.ensureBytes(int(length) * 2); err != nil {
+	// Check for integer overflow before multiplication
+	if length > uint32(MaxSequenceLength/2) {
+		return nil, NewExceededMaxLength(uint64(length))
+	}
+	byteLen := int(length) * 2
+	if err := d.ensureBytes(byteLen); err != nil {
 		return nil, err
 	}
 	result := make([]uint16, length)
@@ -621,7 +626,12 @@ func (d *Deserializer) ReadU32Slice() ([]uint32, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := d.ensureBytes(int(length) * 4); err != nil {
+	// Check for integer overflow before multiplication
+	if length > uint32(MaxSequenceLength/4) {
+		return nil, NewExceededMaxLength(uint64(length))
+	}
+	byteLen := int(length) * 4
+	if err := d.ensureBytes(byteLen); err != nil {
 		return nil, err
 	}
 	result := make([]uint32, length)
@@ -638,7 +648,12 @@ func (d *Deserializer) ReadU64Slice() ([]uint64, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := d.ensureBytes(int(length) * 8); err != nil {
+	// Check for integer overflow before multiplication
+	if length > uint32(MaxSequenceLength/8) {
+		return nil, NewExceededMaxLength(uint64(length))
+	}
+	byteLen := int(length) * 8
+	if err := d.ensureBytes(byteLen); err != nil {
 		return nil, err
 	}
 	result := make([]uint64, length)

@@ -79,10 +79,22 @@ static bcs_error_t grow_buffer(bcs_serializer_t* restrict ser, size_t required) 
         return BCS_ERR_BUFFER_TOO_SMALL;
     }
 
-    /* Grow buffer (double or required, whichever is larger) */
-    size_t new_capacity = ser->capacity * 2;
+    /* Check for overflow when doubling capacity */
+    size_t new_capacity;
+    if (ser->capacity > SIZE_MAX / 2) {
+        /* Doubling would overflow, use required or max safe value */
+        new_capacity = required;
+    } else {
+        new_capacity = ser->capacity * 2;
+    }
+    
     if (new_capacity < required) {
         new_capacity = required;
+    }
+
+    /* Limit allocation to MAX_SEQUENCE_LENGTH to prevent DoS */
+    if (new_capacity > BCS_MAX_SEQUENCE_LENGTH) {
+        return BCS_ERR_EXCEEDED_MAX_LENGTH;
     }
 
     uint8_t* new_buffer = (uint8_t*)realloc(ser->buffer, new_capacity);
@@ -97,6 +109,10 @@ static bcs_error_t grow_buffer(bcs_serializer_t* restrict ser, size_t required) 
 
 BCS_ALWAYS_INLINE BCS_HOT bcs_error_t ensure_capacity(bcs_serializer_t* restrict ser,
                                                        size_t needed) {
+    /* Check for overflow when calculating required size */
+    if (BCS_UNLIKELY(needed > SIZE_MAX - ser->size)) {
+        return BCS_ERR_EXCEEDED_MAX_LENGTH;
+    }
     size_t required = ser->size + needed;
     if (BCS_LIKELY(required <= ser->capacity)) {
         return BCS_OK;
@@ -109,6 +125,10 @@ BCS_ALWAYS_INLINE BCS_HOT bcs_error_t write_byte(bcs_serializer_t* restrict ser,
     if (BCS_LIKELY(ser->size < ser->capacity)) {
         ser->buffer[ser->size++] = byte;
         return BCS_OK;
+    }
+    /* Check for overflow before calculating new size */
+    if (BCS_UNLIKELY(ser->size == SIZE_MAX)) {
+        return BCS_ERR_EXCEEDED_MAX_LENGTH;
     }
     bcs_error_t err = grow_buffer(ser, ser->size + 1);
     if (BCS_UNLIKELY(err != BCS_OK))
@@ -332,6 +352,10 @@ BCS_HOT bcs_error_t bcs_write_bytes(bcs_serializer_t* restrict ser,
 
     /* Optimize: check capacity for length + data in one call */
     size_t uleb_size = bcs_uleb128_encoded_size((uint32_t)len);
+    /* Check for overflow before addition */
+    if (BCS_UNLIKELY(uleb_size > SIZE_MAX - len)) {
+        return BCS_ERR_EXCEEDED_MAX_LENGTH;
+    }
     bcs_error_t err = ensure_capacity(ser, uleb_size + len);
     if (BCS_UNLIKELY(err != BCS_OK))
         return err;

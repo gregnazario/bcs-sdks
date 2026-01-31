@@ -215,7 +215,7 @@ public final class BcsDeserializer {
     /// Read bytes with ULEB128 length prefix
     @inlinable
     public func readBytes() throws -> [UInt8] {
-        let length = Int(try readUleb128())
+        let length = try uleb128ToInt(try readUleb128())
         try checkSequenceLength(length)
         return try readFixedBytes(length)
     }
@@ -223,7 +223,7 @@ public final class BcsDeserializer {
     /// Read a UTF-8 string with ULEB128 length prefix
     @inlinable
     public func readString() throws -> String {
-        let length = Int(try readUleb128())
+        let length = try uleb128ToInt(try readUleb128())
         try checkSequenceLength(length)
         guard offset &+ length <= data.count else {
             throw BcsError.unexpectedEof()
@@ -257,7 +257,7 @@ public final class BcsDeserializer {
     /// Read a vector with element deserializer
     @inlinable
     public func readVector<T>(_ deserializer: (BcsDeserializer) throws -> T) throws -> [T] {
-        let length = Int(try readUleb128())
+        let length = try uleb128ToInt(try readUleb128())
         try checkSequenceLength(length)
 
         var result: [T] = []
@@ -273,7 +273,7 @@ public final class BcsDeserializer {
         keyDeserializer: (BcsDeserializer) throws -> K,
         valueDeserializer: (BcsDeserializer) throws -> V
     ) throws -> [K: V] {
-        let length = Int(try readUleb128())
+        let length = try uleb128ToInt(try readUleb128())
         try checkSequenceLength(length)
 
         var result: [K: V] = [:]
@@ -319,10 +319,10 @@ public final class BcsDeserializer {
     @inlinable
     @discardableResult
     public func enterContainer() throws -> BcsDeserializer {
-        depth &+= 1
-        if depth > BcsConstants.maxContainerDepth {
-            throw BcsError.exceededContainerDepth(depth)
+        if depth >= BcsConstants.maxContainerDepth {
+            throw BcsError.exceededContainerDepth(depth + 1)
         }
+        depth &+= 1
         return self
     }
 
@@ -400,7 +400,7 @@ public final class BcsDeserializer {
     /// Read a vector of U8 values efficiently
     @inlinable
     public func readU8Vector() throws -> [UInt8] {
-        let length = Int(try readUleb128())
+        let length = try uleb128ToInt(try readUleb128())
         try checkSequenceLength(length)
         return try readFixedBytes(length)
     }
@@ -408,7 +408,12 @@ public final class BcsDeserializer {
     /// Read a vector of U16 values efficiently
     @inlinable
     public func readU16Vector() throws -> [UInt16] {
-        let length = Int(try readUleb128())
+        let uleb = try readUleb128()
+        // Check for overflow: length * 2 must fit in Int
+        guard uleb <= UInt32(Int.max / 2) else {
+            throw BcsError.exceededMaxLength(Int(truncatingIfNeeded: uleb))
+        }
+        let length = Int(uleb)
         try checkSequenceLength(length)
         let byteCount = length * 2
         guard offset &+ byteCount <= data.count else {
@@ -427,7 +432,12 @@ public final class BcsDeserializer {
     /// Read a vector of U32 values efficiently
     @inlinable
     public func readU32Vector() throws -> [UInt32] {
-        let length = Int(try readUleb128())
+        let uleb = try readUleb128()
+        // Check for overflow: length * 4 must fit in Int
+        guard uleb <= UInt32(Int.max / 4) else {
+            throw BcsError.exceededMaxLength(Int(truncatingIfNeeded: uleb))
+        }
+        let length = Int(uleb)
         try checkSequenceLength(length)
         let byteCount = length * 4
         guard offset &+ byteCount <= data.count else {
@@ -450,7 +460,12 @@ public final class BcsDeserializer {
     /// Read a vector of U64 values efficiently
     @inlinable
     public func readU64Vector() throws -> [UInt64] {
-        let length = Int(try readUleb128())
+        let uleb = try readUleb128()
+        // Check for overflow: length * 8 must fit in Int
+        guard uleb <= UInt32(Int.max / 8) else {
+            throw BcsError.exceededMaxLength(Int(truncatingIfNeeded: uleb))
+        }
+        let length = Int(uleb)
         try checkSequenceLength(length)
         let byteCount = length * 8
         guard offset &+ byteCount <= data.count else {
@@ -475,6 +490,16 @@ public final class BcsDeserializer {
     }
 
     // MARK: - Private
+
+    /// Safely convert ULEB128 value to Int, handling 32-bit platform overflow
+    @usableFromInline
+    internal func uleb128ToInt(_ value: UInt32) throws -> Int {
+        // On 32-bit platforms, Int.max is 2^31-1, so UInt32 values > Int.max would overflow
+        guard value <= UInt32(Int.max) else {
+            throw BcsError.exceededMaxLength(Int(truncatingIfNeeded: value))
+        }
+        return Int(value)
+    }
 
     @usableFromInline
     internal func checkSequenceLength(_ length: Int) throws {

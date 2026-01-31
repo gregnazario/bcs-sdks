@@ -277,10 +277,10 @@ class Deserializer {
 
     /// Enter a struct/enum container (for depth tracking)
     Deserializer& enter_container() {
-        ++depth_;
-        if (BCS_UNLIKELY(depth_ > MAX_CONTAINER_DEPTH)) {
-            throw Error::exceeded_container_depth(depth_);
+        if (BCS_UNLIKELY(depth_ >= MAX_CONTAINER_DEPTH)) {
+            throw Error::exceeded_container_depth(depth_ + 1);
         }
+        ++depth_;
         return *this;
     }
 

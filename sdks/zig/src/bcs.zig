@@ -399,8 +399,13 @@ pub const Serializer = struct {
 
         const bytes_per_elem = @divExact(info.int.bits, 8);
 
+        // Check for overflow before multiplication
+        const total_bytes = std.math.mul(usize, values.len, bytes_per_elem) catch {
+            return Error.ExceededMaxLength;
+        };
+
         // Pre-allocate for all elements
-        try self.ensureCapacity(values.len * bytes_per_elem);
+        try self.ensureCapacity(total_bytes);
 
         for (values) |v| {
             try self.writeInt(T, v);

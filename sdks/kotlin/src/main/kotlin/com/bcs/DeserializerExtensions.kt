@@ -18,10 +18,11 @@ import java.math.BigInteger
 inline fun <T : Any> BcsDeserializer.readOption(
     deserializer: BcsDeserializer.() -> T
 ): T? {
-    return when (readU8()) {
+    val tag = readU8()
+    return when (tag) {
         0 -> null
         1 -> deserializer()
-        else -> throw BcsError.invalidOption(2)
+        else -> throw BcsError.invalidOption(tag)
     }
 }
 
@@ -48,7 +49,11 @@ fun BcsDeserializer.readOptionBool(): Boolean? = readOption { readBool() }
 inline fun <T> BcsDeserializer.readList(
     deserializer: BcsDeserializer.() -> T
 ): List<T> {
-    val length = readUleb128().toInt()
+    val lengthLong = readUleb128()
+    if (lengthLong > Int.MAX_VALUE) {
+        throw BcsError.exceededMaxLength(lengthLong.toInt())
+    }
+    val length = lengthLong.toInt()
     return List(length) { deserializer() }
 }
 
@@ -58,7 +63,11 @@ inline fun <T> BcsDeserializer.readList(
 inline fun <T> BcsDeserializer.readMutableList(
     deserializer: BcsDeserializer.() -> T
 ): MutableList<T> {
-    val length = readUleb128().toInt()
+    val lengthLong = readUleb128()
+    if (lengthLong > Int.MAX_VALUE) {
+        throw BcsError.exceededMaxLength(lengthLong.toInt())
+    }
+    val length = lengthLong.toInt()
     return MutableList(length) { deserializer() }
 }
 
@@ -66,7 +75,11 @@ inline fun <T> BcsDeserializer.readMutableList(
  * Read a ByteArray from a vector
  */
 fun BcsDeserializer.readByteList(): ByteArray {
-    val length = readUleb128().toInt()
+    val lengthLong = readUleb128()
+    if (lengthLong > Int.MAX_VALUE) {
+        throw BcsError.exceededMaxLength(lengthLong.toInt())
+    }
+    val length = lengthLong.toInt()
     return ByteArray(length) { readU8().toByte() }
 }
 
@@ -128,10 +141,11 @@ inline fun <K, V> BcsDeserializer.readMap(
     keyDeserializer: BcsDeserializer.() -> K,
     valueDeserializer: BcsDeserializer.() -> V
 ): Map<K, V> {
-    val length = readUleb128().toInt()
-    if (length > BcsConstants.MAX_SEQUENCE_LENGTH) {
-        throw BcsError.exceededMaxLength(length)
+    val lengthLong = readUleb128()
+    if (lengthLong > Int.MAX_VALUE || lengthLong > BcsConstants.MAX_SEQUENCE_LENGTH) {
+        throw BcsError.exceededMaxLength(lengthLong.toInt())
     }
+    val length = lengthLong.toInt()
     
     val result = linkedMapOf<K, V>()
     var prevKeyBytes: ByteArray? = null
@@ -182,10 +196,11 @@ inline fun <K, V> BcsDeserializer.readMutableMap(
     keyDeserializer: BcsDeserializer.() -> K,
     valueDeserializer: BcsDeserializer.() -> V
 ): MutableMap<K, V> {
-    val length = readUleb128().toInt()
-    if (length > BcsConstants.MAX_SEQUENCE_LENGTH) {
-        throw BcsError.exceededMaxLength(length)
+    val lengthLong = readUleb128()
+    if (lengthLong > Int.MAX_VALUE || lengthLong > BcsConstants.MAX_SEQUENCE_LENGTH) {
+        throw BcsError.exceededMaxLength(lengthLong.toInt())
     }
+    val length = lengthLong.toInt()
     
     val result = linkedMapOf<K, V>()
     var prevKeyBytes: ByteArray? = null

@@ -155,9 +155,14 @@ class Serializer {
     /// Write bytes with ULEB128 length prefix
     Serializer& write_bytes(const uint8_t* data, size_t len) {
         check_sequence_length(len);
-        // Pre-calculate total size needed
+        // Pre-calculate total size needed with overflow check
         const size_t uleb_size = uleb128::encoded_size(static_cast<uint32_t>(len));
-        buffer_.reserve(buffer_.size() + uleb_size + len);
+        const size_t current_size = buffer_.size();
+        // Check for overflow before addition
+        if (uleb_size > SIZE_MAX - len || current_size > SIZE_MAX - uleb_size - len) {
+            throw Error::exceeded_max_length(len);
+        }
+        buffer_.reserve(current_size + uleb_size + len);
         write_uleb128(static_cast<uint32_t>(len));
         write_fixed_bytes(data, len);
         return *this;
@@ -241,10 +246,10 @@ class Serializer {
 
     /// Enter a struct/enum container (for depth tracking)
     Serializer& enter_container() {
-        ++depth_;
-        if (depth_ > MAX_CONTAINER_DEPTH) {
-            throw Error::exceeded_container_depth(depth_);
+        if (depth_ >= MAX_CONTAINER_DEPTH) {
+            throw Error::exceeded_container_depth(depth_ + 1);
         }
+        ++depth_;
         return *this;
     }
 

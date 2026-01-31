@@ -333,10 +333,10 @@ public final class BcsSerializer {
     @inlinable
     @discardableResult
     public func enterContainer() throws -> BcsSerializer {
-        depth += 1
-        if depth > BcsConstants.maxContainerDepth {
-            throw BcsError.exceededContainerDepth(depth)
+        if depth >= BcsConstants.maxContainerDepth {
+            throw BcsError.exceededContainerDepth(depth + 1)
         }
+        depth += 1
         return self
     }
 

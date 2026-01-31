@@ -285,7 +285,8 @@ export class BcsDeserializer {
    */
   readVector<T>(deserializer: (des: BcsDeserializer) => T): T[] {
     const length = this.readUleb128();
-    if (length > MAX_SEQUENCE_LENGTH) {
+    // Validate length is within safe bounds
+    if (length > MAX_SEQUENCE_LENGTH || !Number.isSafeInteger(length)) {
       throw BcsError.exceededMaxLength(length);
     }
     const result: T[] = [];

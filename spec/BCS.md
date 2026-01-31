@@ -111,6 +111,8 @@ Unsigned integers SHALL be serialized as fixed-width little-endian bytes:
 | u128 | 16 bytes | 0 | 2^128 - 1 |
 | u256 | 32 bytes | 0 | 2^256 - 1 |
 
+> **Note:** u256 is an extension to the original Diem BCS specification. The canonical Rust reference implementation (https://github.com/diem/bcs) does not include this type. Implementations MAY support u256 for compatibility with Aptos and other ecosystems that require 256-bit integers.
+
 **Examples:**
 
 | Type | Value | Serialized Bytes |
@@ -141,6 +143,8 @@ Signed integers SHALL be serialized using two's complement representation in lit
 | i64  | 8 bytes | -2^63 | 2^63 - 1 |
 | i128 | 16 bytes | -2^127 | 2^127 - 1 |
 | i256 | 32 bytes | -2^255 | 2^255 - 1 |
+
+> **Note:** i256 is an extension to the original Diem BCS specification. The canonical Rust reference implementation does not include this type. Implementations MAY support i256 for compatibility with ecosystems that require 256-bit signed integers.
 
 **Examples:**
 
@@ -476,6 +480,8 @@ Deserializers SHALL fail with an appropriate error for:
 | Unknown enum variant | UnknownVariant |
 | Remaining bytes after deserialization | RemainingInput |
 
+> **Note:** Low-level deserializer APIs MAY allow incremental deserialization without checking for remaining input. This enables parsing multiple values from a single byte stream. High-level convenience functions (e.g., `from_bytes`, `deserialize`) SHOULD automatically verify no bytes remain after deserialization to detect truncated or malformed data.
+
 ---
 
 ## 8. Security Considerations
@@ -518,10 +524,10 @@ BCS is NOT self-describing. Implementations SHOULD:
 
 ## Appendix A: Reference Implementations
 
-- **Rust**: https://github.com/diem/bcs (canonical reference)
-- **Python**: (this project)
-- **TypeScript**: (this project)
-- **Go**: (this project)
+- **Rust**: https://github.com/diem/bcs (canonical reference - excludes u256/i256)
+- **This Project** (15 language implementations):
+  - C, C++, C#, Dart, Elixir, Go, Java, Kotlin, OCaml, Python, Ruby, Rust, Swift, TypeScript, Zig
+  - Note: All implementations except Rust include u256/i256 extension support
 
 ## Appendix B: Comparison with Other Formats
 

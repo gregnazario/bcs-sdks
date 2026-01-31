@@ -127,7 +127,11 @@ class BcsDeserializer(private val data: ByteArray) {
     }
 
     fun readBytes(): ByteArray {
-        val length = readUleb128().toInt()
+        val lengthLong = readUleb128()
+        if (lengthLong > Int.MAX_VALUE) {
+            throw BcsError.exceededMaxLength(lengthLong.toInt())
+        }
+        val length = lengthLong.toInt()
         checkSequenceLength(length)
         return readFixedBytes(length)
     }
@@ -155,7 +159,11 @@ class BcsDeserializer(private val data: ByteArray) {
      * Read a vector of u8 values efficiently
      */
     fun readU8Vector(): ByteArray {
-        val length = readUleb128().toInt()
+        val lengthLong = readUleb128()
+        if (lengthLong > Int.MAX_VALUE) {
+            throw BcsError.exceededMaxLength(lengthLong.toInt())
+        }
+        val length = lengthLong.toInt()
         checkSequenceLength(length)
         return readFixedBytes(length)
     }
@@ -164,7 +172,12 @@ class BcsDeserializer(private val data: ByteArray) {
      * Read a vector of u16 values efficiently
      */
     fun readU16Vector(): ShortArray {
-        val length = readUleb128().toInt()
+        val lengthLong = readUleb128()
+        // Check for overflow: length * 2 must not overflow Int
+        if (lengthLong > Int.MAX_VALUE / 2) {
+            throw BcsError.exceededMaxLength(lengthLong.toInt())
+        }
+        val length = lengthLong.toInt()
         checkSequenceLength(length)
         val byteLen = length * 2
         if (offset + byteLen > dataLen) throw BcsError.unexpectedEof()
@@ -180,7 +193,12 @@ class BcsDeserializer(private val data: ByteArray) {
      * Read a vector of u32 values efficiently
      */
     fun readU32Vector(): IntArray {
-        val length = readUleb128().toInt()
+        val lengthLong = readUleb128()
+        // Check for overflow: length * 4 must not overflow Int
+        if (lengthLong > Int.MAX_VALUE / 4) {
+            throw BcsError.exceededMaxLength(lengthLong.toInt())
+        }
+        val length = lengthLong.toInt()
         checkSequenceLength(length)
         val byteLen = length * 4
         if (offset + byteLen > dataLen) throw BcsError.unexpectedEof()
@@ -196,7 +214,12 @@ class BcsDeserializer(private val data: ByteArray) {
      * Read a vector of u64 values efficiently
      */
     fun readU64Vector(): LongArray {
-        val length = readUleb128().toInt()
+        val lengthLong = readUleb128()
+        // Check for overflow: length * 8 must not overflow Int
+        if (lengthLong > Int.MAX_VALUE / 8) {
+            throw BcsError.exceededMaxLength(lengthLong.toInt())
+        }
+        val length = lengthLong.toInt()
         checkSequenceLength(length)
         val byteLen = length * 8
         if (offset + byteLen > dataLen) throw BcsError.unexpectedEof()
@@ -254,7 +277,11 @@ class BcsDeserializer(private val data: ByteArray) {
 
     fun enterEnum(): Int {
         enterContainer("enum")
-        return readUleb128().toInt()
+        val index = readUleb128()
+        if (index > Int.MAX_VALUE) {
+            throw BcsError.integerOutOfRange("variant index")
+        }
+        return index.toInt()
     }
 
     fun leaveEnum(): BcsDeserializer {

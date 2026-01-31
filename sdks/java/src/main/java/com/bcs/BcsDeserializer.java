@@ -319,7 +319,8 @@ public class BcsDeserializer {
      */
     public <T> List<T> readVector(Function<BcsDeserializer, T> deserializer) {
         long length = readUleb128();
-        if (length > BcsSerializer.MAX_SEQUENCE_LENGTH) {
+        // Check both MAX_SEQUENCE_LENGTH and Integer.MAX_VALUE for defense-in-depth
+        if (length > BcsSerializer.MAX_SEQUENCE_LENGTH || length > Integer.MAX_VALUE) {
             throw BcsError.exceededMaxLength(length);
         }
         int len = (int) length;
@@ -338,10 +339,15 @@ public class BcsDeserializer {
      * Enter an enum container and read its variant index (ULEB128).
      *
      * @return the variant index
+     * @throws BcsError if the variant index exceeds Integer.MAX_VALUE
      */
     public int enterEnum() {
         enterContainer("enum");
-        return (int) readUleb128();
+        long index = readUleb128();
+        if (index > Integer.MAX_VALUE) {
+            throw BcsError.valueOutOfRange("variant index", index);
+        }
+        return (int) index;
     }
 
     /**
