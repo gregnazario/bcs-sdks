@@ -179,7 +179,7 @@ jobs:
       - name: Convert coverage
         run: |
           xcrun llvm-cov export \
-            .build/debug/BCSPackageTests.xctest/Contents/MacOS/BCSPackageTests \
+            .build/debug/BCSTests.xctest/Contents/MacOS/BCSTests \
             -instr-profile=.build/debug/codecov/default.profdata \
             -format=lcov > lcov.info || true
         working-directory: sdks/swift
