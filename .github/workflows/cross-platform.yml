@@ -293,15 +293,33 @@ jobs:
         if: matrix.cc == 'cl'
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Build
+      - name: Build (MSVC)
+        if: matrix.cc == 'cl'
+        working-directory: sdks/c
+        shell: cmd
+        run: |
+          if not exist build mkdir build
+          cl /nologo /W4 /O2 /c /I include src\bcs.c /Fo:build\bcs.obj
+          lib /nologo /OUT:build\bcs.lib build\bcs.obj
+
+      - name: Build (Unix)
+        if: matrix.cc != 'cl'
         env:
           CC: ${{ matrix.cc }}
         run: make build
         working-directory: sdks/c
         shell: bash
 
-      - name: Test
-        if: matrix.test
+      - name: Test (MSVC)
+        if: matrix.cc == 'cl' && matrix.test
+        working-directory: sdks/c
+        shell: cmd
+        run: |
+          cl /nologo /W4 /O2 /I include tests\test_bcs.c build\bcs.lib /Fe:build\test_bcs.exe
+          build\test_bcs.exe
+
+      - name: Test (Unix)
+        if: matrix.cc != 'cl' && matrix.test
         run: make test
         working-directory: sdks/c
         shell: bash
