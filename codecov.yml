@@ -1,0 +1,101 @@
+# Codecov configuration
+# https://docs.codecov.com/docs/codecovyml-reference
+
+coverage:
+  precision: 2
+  round: down
+  range: "60...100"
+  
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 5%
+        informational: true
+    patch:
+      default:
+        target: auto
+        threshold: 5%
+        informational: true
+
+# Flag management - each SDK reports separately
+flags:
+  rust:
+    paths:
+      - sdks/rust/
+    carryforward: true
+  go:
+    paths:
+      - sdks/go/
+    carryforward: true
+  python:
+    paths:
+      - sdks/python/
+    carryforward: true
+  typescript:
+    paths:
+      - sdks/typescript/
+    carryforward: true
+  java:
+    paths:
+      - sdks/java/
+    carryforward: true
+  kotlin:
+    paths:
+      - sdks/kotlin/
+    carryforward: true
+  csharp:
+    paths:
+      - sdks/csharp/
+    carryforward: true
+  swift:
+    paths:
+      - sdks/swift/
+    carryforward: true
+  ruby:
+    paths:
+      - sdks/ruby/
+    carryforward: true
+  dart:
+    paths:
+      - sdks/dart/
+    carryforward: true
+  c:
+    paths:
+      - sdks/c/
+    carryforward: true
+  cpp:
+    paths:
+      - sdks/cpp/
+    carryforward: true
+  zig:
+    paths:
+      - sdks/zig/
+    carryforward: true
+
+# Ignore test files and generated code
+ignore:
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/spec/**"
+  - "**/*_test.*"
+  - "**/*.test.*"
+  - "**/build/**"
+  - "**/dist/**"
+  - "**/target/**"
+  - "**/node_modules/**"
+
+comment:
+  layout: "header, diff, flags, components"
+  behavior: default
+  require_changes: true
+  require_base: false
+  require_head: true
+
+parsers:
+  gcov:
+    branch_detection:
+      conditional: true
+      loop: true
+      method: false
+      macro: false

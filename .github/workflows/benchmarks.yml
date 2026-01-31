@@ -1,0 +1,283 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      compare_baseline:
+        description: 'Compare against baseline'
+        required: false
+        default: 'true'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # =============================================================================
+  # PERFORMANCE BENCHMARKS
+  # =============================================================================
+
+  rust-bench:
+    name: Rust Benchmarks
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/rust/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run benchmarks
+        run: cargo bench --no-fail-fast 2>&1 | tee benchmark-results.txt
+        working-directory: sdks/rust
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-benchmarks
+          path: sdks/rust/benchmark-results.txt
+
+  go-bench:
+    name: Go Benchmarks
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/go/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Run benchmarks
+        run: go test -bench=. -benchmem ./... 2>&1 | tee benchmark-results.txt
+        working-directory: sdks/go
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-benchmarks
+          path: sdks/go/benchmark-results.txt
+
+  python-bench:
+    name: Python Benchmarks
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/python/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -e ".[dev]" pytest-benchmark
+        working-directory: sdks/python
+      - name: Run benchmarks
+        run: |
+          python -c "
+          import timeit
+          from bcs import BcsSerializer, BcsDeserializer
+          
+          # Benchmark serialization
+          def bench_serialize():
+              ser = BcsSerializer()
+              ser.write_u64(0xDEADBEEF12345678)
+              ser.write_string('Hello, World!')
+              ser.write_bool(True)
+              return ser.to_bytes()
+          
+          # Benchmark deserialization  
+          data = bench_serialize()
+          def bench_deserialize():
+              des = BcsDeserializer(data)
+              des.read_u64()
+              des.read_string()
+              des.read_bool()
+          
+          # Run benchmarks
+          ser_time = timeit.timeit(bench_serialize, number=100000)
+          des_time = timeit.timeit(bench_deserialize, number=100000)
+          
+          print(f'Serialization: {ser_time*10:.2f} µs/op (100k ops in {ser_time:.2f}s)')
+          print(f'Deserialization: {des_time*10:.2f} µs/op (100k ops in {des_time:.2f}s)')
+          " | tee benchmark-results.txt
+        working-directory: sdks/python
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-benchmarks
+          path: sdks/python/benchmark-results.txt
+
+  typescript-bench:
+    name: TypeScript Benchmarks
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/typescript/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm ci
+        working-directory: sdks/typescript
+      - name: Build
+        run: npm run build
+        working-directory: sdks/typescript
+      - name: Run benchmarks
+        run: |
+          node -e "
+          const { BcsSerializer, BcsDeserializer } = require('./dist/index.js');
+          
+          // Benchmark serialization
+          function benchSerialize() {
+            const ser = new BcsSerializer();
+            ser.writeU64(BigInt('0xDEADBEEF12345678'));
+            ser.writeString('Hello, World!');
+            ser.writeBool(true);
+            return ser.toBytes();
+          }
+          
+          // Benchmark deserialization
+          const data = benchSerialize();
+          function benchDeserialize() {
+            const des = new BcsDeserializer(data);
+            des.readU64();
+            des.readString();
+            des.readBool();
+          }
+          
+          // Run benchmarks
+          const iterations = 100000;
+          
+          let start = performance.now();
+          for (let i = 0; i < iterations; i++) benchSerialize();
+          const serTime = performance.now() - start;
+          
+          start = performance.now();
+          for (let i = 0; i < iterations; i++) benchDeserialize();
+          const desTime = performance.now() - start;
+          
+          console.log('Serialization: ' + (serTime/iterations*1000).toFixed(2) + ' µs/op (' + iterations + ' ops in ' + (serTime/1000).toFixed(2) + 's)');
+          console.log('Deserialization: ' + (desTime/iterations*1000).toFixed(2) + ' µs/op (' + iterations + ' ops in ' + (desTime/1000).toFixed(2) + 's)');
+          " | tee benchmark-results.txt
+        working-directory: sdks/typescript
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-benchmarks
+          path: sdks/typescript/benchmark-results.txt
+
+  java-bench:
+    name: Java Benchmarks
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/java/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Build
+        run: mvn compile
+        working-directory: sdks/java
+      - name: Run benchmarks
+        run: |
+          mvn exec:java -Dexec.mainClass="com.bcs.Benchmark" 2>&1 | tee benchmark-results.txt || echo "Benchmark class not found, skipping"
+        working-directory: sdks/java
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-benchmarks
+          path: sdks/java/benchmark-results.txt
+        if: always()
+
+  cpp-bench:
+    name: C++ Benchmarks
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/cpp/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+      - name: Build with benchmarks
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release
+        working-directory: sdks/cpp
+      - name: Run benchmarks
+        run: |
+          ./build/test_bcs 2>&1 | tee benchmark-results.txt || echo "Tests completed"
+        working-directory: sdks/cpp
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-benchmarks
+          path: sdks/cpp/benchmark-results.txt
+
+  # =============================================================================
+  # E2E PERFORMANCE COMPARISON
+  # =============================================================================
+
+  e2e-benchmarks:
+    name: E2E Cross-Language Benchmarks
+    runs-on: ubuntu-latest
+    needs: [rust-bench, go-bench, python-bench, typescript-bench]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      
+      # Setup all language runtimes
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      
+      - name: Build reference implementation
+        run: cargo build --release
+        working-directory: e2e-tests/reference
+      
+      - name: Run E2E benchmarks
+        run: |
+          python benchmark_orchestrator.py --output benchmark-report.json 2>&1 | tee benchmark-output.txt || true
+        working-directory: e2e-tests
+      
+      - name: Upload E2E results
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-benchmarks
+          path: |
+            e2e-tests/benchmark-report.json
+            e2e-tests/benchmark-output.txt
+        if: always()
+
+  # =============================================================================
+  # BENCHMARK SUMMARY
+  # =============================================================================
+
+  benchmark-summary:
+    name: Benchmark Summary
+    runs-on: ubuntu-latest
+    needs: [rust-bench, go-bench, python-bench, typescript-bench, java-bench, cpp-bench, e2e-benchmarks]
+    if: always()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: benchmarks
+      
+      - name: Generate summary
+        run: |
+          echo "# Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          for dir in benchmarks/*/; do
+            name=$(basename "$dir")
+            echo "## $name" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat "$dir"/*.txt 2>/dev/null | head -50 >> $GITHUB_STEP_SUMMARY || echo "No results"
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          done

@@ -1,0 +1,255 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # =============================================================================
+  # COVERAGE REPORTS
+  # =============================================================================
+
+  rust-coverage:
+    name: Rust Coverage
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/rust/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate coverage
+        run: cargo llvm-cov --lcov --output-path lcov.info
+        working-directory: sdks/rust
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: sdks/rust/lcov.info
+          flags: rust
+          fail_ci_if_error: false
+
+  go-coverage:
+    name: Go Coverage
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/go/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Generate coverage
+        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+        working-directory: sdks/go
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: sdks/go/coverage.out
+          flags: go
+          fail_ci_if_error: false
+
+  python-coverage:
+    name: Python Coverage
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/python/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+        working-directory: sdks/python
+      - name: Generate coverage
+        run: pytest --cov=src/bcs --cov-report=xml tests/
+        working-directory: sdks/python
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: sdks/python/coverage.xml
+          flags: python
+          fail_ci_if_error: false
+
+  typescript-coverage:
+    name: TypeScript Coverage
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/typescript/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm ci
+        working-directory: sdks/typescript
+      - name: Install coverage tool
+        run: npm install -D @vitest/coverage-v8
+        working-directory: sdks/typescript
+      - name: Generate coverage
+        run: npm test -- --coverage --coverage.reporter=lcov
+        working-directory: sdks/typescript
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: sdks/typescript/coverage/lcov.info
+          flags: typescript
+          fail_ci_if_error: false
+
+  java-coverage:
+    name: Java Coverage
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/java/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Generate coverage with JaCoCo
+        run: mvn test jacoco:report
+        working-directory: sdks/java
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: sdks/java/target/site/jacoco/jacoco.xml
+          flags: java
+          fail_ci_if_error: false
+
+  kotlin-coverage:
+    name: Kotlin Coverage
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/kotlin/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+      - name: Generate coverage with Kover
+        run: ./gradlew koverXmlReport || ./gradlew test
+        working-directory: sdks/kotlin
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: sdks/kotlin/build/reports/kover/report.xml
+          flags: kotlin
+          fail_ci_if_error: false
+
+  csharp-coverage:
+    name: C# Coverage
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/csharp/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Generate coverage
+        run: dotnet test --collect:"XPlat Code Coverage" --results-directory ./coverage
+        working-directory: sdks/csharp
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          directory: sdks/csharp/coverage
+          flags: csharp
+          fail_ci_if_error: false
+
+  swift-coverage:
+    name: Swift Coverage
+    runs-on: macos-latest
+    if: ${{ hashFiles('sdks/swift/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate coverage
+        run: swift test --enable-code-coverage
+        working-directory: sdks/swift
+      - name: Convert coverage
+        run: |
+          xcrun llvm-cov export \
+            .build/debug/BCSPackageTests.xctest/Contents/MacOS/BCSPackageTests \
+            -instr-profile=.build/debug/codecov/default.profdata \
+            -format=lcov > lcov.info || true
+        working-directory: sdks/swift
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: sdks/swift/lcov.info
+          flags: swift
+          fail_ci_if_error: false
+
+  ruby-coverage:
+    name: Ruby Coverage
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/ruby/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: sdks/ruby
+      - name: Install simplecov
+        run: |
+          echo "gem 'simplecov', require: false" >> Gemfile
+          bundle install
+        working-directory: sdks/ruby
+      - name: Generate coverage
+        run: |
+          echo "require 'simplecov'; SimpleCov.start" | cat - spec/bcs_spec.rb > temp && mv temp spec/bcs_spec.rb
+          ruby -Ilib:spec spec/bcs_spec.rb
+        working-directory: sdks/ruby
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          directory: sdks/ruby/coverage
+          flags: ruby
+          fail_ci_if_error: false
+
+  dart-coverage:
+    name: Dart Coverage
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('sdks/dart/**') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - name: Install dependencies
+        run: dart pub get
+        working-directory: sdks/dart
+      - name: Generate coverage
+        run: |
+          dart pub global activate coverage
+          dart test --coverage=coverage
+          dart pub global run coverage:format_coverage --lcov --in=coverage --out=lcov.info --report-on=lib
+        working-directory: sdks/dart
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: sdks/dart/lcov.info
+          flags: dart
+          fail_ci_if_error: false
+
+  # =============================================================================
+  # COVERAGE SUMMARY
+  # =============================================================================
+
+  coverage-summary:
+    name: Coverage Summary
+    runs-on: ubuntu-latest
+    needs: [rust-coverage, go-coverage, python-coverage, typescript-coverage, java-coverage, kotlin-coverage, csharp-coverage, swift-coverage, ruby-coverage, dart-coverage]
+    if: always()
+    steps:
+      - name: Check coverage jobs
+        run: |
+          echo "Coverage collection complete"
+          echo "View detailed reports at https://codecov.io/gh/${{ github.repository }}"
