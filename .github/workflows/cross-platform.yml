@@ -338,8 +338,8 @@ jobs:
 
       - name: Build with Emscripten
         run: |
-          emcc -O2 -I include src/bcs.c -c -o build/bcs.o
           mkdir -p build
+          emcc -O2 -I include src/bcs.c -c -o build/bcs.o
           emar rcs build/libbcs.a build/bcs.o
         working-directory: sdks/c
 
