@@ -48,11 +48,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             cross: false
             test: true
-          # Windows ARM64 - cross-compile (build only)
-          - os: ubuntu-latest
-            target: aarch64-pc-windows-gnullvm
-            cross: true
-            test: false
+          # Note: aarch64-pc-windows-gnullvm removed - cross doesn't support it
           # WASM - build and test with wasm-pack
           - os: ubuntu-latest
             target: wasm32-unknown-unknown
