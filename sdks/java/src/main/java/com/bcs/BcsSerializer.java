@@ -11,7 +11,7 @@ import java.util.function.BiConsumer;
  * BCS Serializer - Manual serialization API.
  *
  * <p>Provides explicit methods for serializing each BCS type. Use this for full control over
- * serialization.</p>
+ * serialization.
  *
  * <pre>{@code
  * BcsSerializer ser = new BcsSerializer();
