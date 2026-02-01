@@ -1,6 +1,7 @@
 plugins {
     kotlin("jvm") version "2.3.0"
     `maven-publish`
+    id("org.jetbrains.kotlinx.kover") version "0.8.3"
 }
 
 group = "com.bcs"

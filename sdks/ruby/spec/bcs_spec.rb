@@ -299,9 +299,7 @@ class BCSTest < Minitest::Test
     ser = BCS::Serializer.new
     map = { 1 => 10, 2 => 20, 3 => 30 }
     ser.write_map(map) { |s, k| s.write_u8(k) }
-       .tap do |s|
-      # NOTE: we need to write values separately in this simple implementation
-    end
+    # NOTE: we need to write values separately in this simple implementation
 
     # For a complete map serialization, we'd need both key and value serializers
     # This test just verifies the basic structure
