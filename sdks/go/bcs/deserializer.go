@@ -49,7 +49,12 @@ func NewDeserializer(data []byte) *Deserializer {
 // Call ReleaseDeserializer when done to return it to the pool.
 func AcquireDeserializer(data []byte) *Deserializer {
 	initBigConstants()
-	d := deserializerPool.Get().(*Deserializer) //nolint:errcheck // type assertion from our own pool
+	d, ok := deserializerPool.Get().(*Deserializer)
+	if !ok {
+		// This should never happen as we only put *Deserializer in the pool
+		d = NewDeserializer(data)
+		return d
+	}
 	d.data = data
 	d.offset = 0
 	return d

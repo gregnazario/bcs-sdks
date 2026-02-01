@@ -67,7 +67,12 @@ func NewSerializerWithCapacity(capacity int) *Serializer {
 // Call ReleaseSerializer when done to return it to the pool.
 func AcquireSerializer() *Serializer {
 	initSerConstants()
-	return serializerPool.Get().(*Serializer) //nolint:errcheck // type assertion from our own pool
+	s, ok := serializerPool.Get().(*Serializer)
+	if !ok {
+		// This should never happen as we only put *Serializer in the pool
+		return NewSerializer()
+	}
+	return s
 }
 
 // ReleaseSerializer returns a Serializer to the pool for reuse.
