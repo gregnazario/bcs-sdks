@@ -17,7 +17,7 @@ import java.util.function.Function;
  * BCS Deserializer - Manual deserialization API.
  *
  * <p>Provides explicit methods for deserializing each BCS type. Use this for full control over
- * deserialization.
+ * deserialization.</p>
  *
  * <pre>{@code
  * byte[] data = ...;

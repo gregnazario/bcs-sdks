@@ -4,7 +4,7 @@ package com.bcs;
  * ULEB128 encoding and decoding for BCS.
  *
  * <p>ULEB128 (Unsigned Little-Endian Base 128) is a variable-length encoding for unsigned integers.
- * Each byte contributes 7 bits of data, with the high bit indicating whether more bytes follow.
+ * Each byte contributes 7 bits of data, with the high bit indicating whether more bytes follow.</p>
  */
 public final class Uleb128 {
 
