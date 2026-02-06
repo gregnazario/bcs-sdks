@@ -19,18 +19,33 @@
 
 namespace bcs {
 
-/// BCS Deserializer - Manual deserialization API
+/// @brief BCS Deserializer -- manual deserialization API.
+///
+/// Provides explicit methods for deserializing each BCS type. All read methods
+/// throw @c bcs::Error on failure (unexpected EOF, invalid data, etc.).
+///
+/// @code
+/// bcs::Deserializer des(bytes);
+/// auto num = des.read_u64();
+/// auto str = des.read_string();
+/// des.check_end();
+/// @endcode
 class Deserializer {
    public:
-    /// Construct from a byte vector
+    /// @brief Construct from a byte vector.
+    /// @param data  Data to deserialize (must outlive the deserializer).
     explicit Deserializer(const std::vector<uint8_t>& data) noexcept
         : data_(data.data()), size_(data.size()), offset_(0), depth_(0) {}
 
-    /// Construct from a raw byte pointer and size
+    /// @brief Construct from a raw byte pointer and size.
+    /// @param data  Pointer to input bytes (must outlive the deserializer).
+    /// @param size  Number of bytes.
     Deserializer(const uint8_t* data, size_t size) noexcept
         : data_(data), size_(size), offset_(0), depth_(0) {}
 
-    /// Read a boolean value
+    /// @brief Deserialize a boolean value.
+    /// @return The boolean value.
+    /// @throws bcs::Error on unexpected EOF or invalid boolean byte.
     bool read_bool() {
         if (BCS_UNLIKELY(offset_ >= size_)) {
             throw Error::unexpected_eof();
@@ -189,7 +204,9 @@ class Deserializer {
         return read_fixed_bytes(len);
     }
 
-    /// Read a UTF-8 string with ULEB128 length prefix
+    /// @brief Deserialize a UTF-8 string with ULEB128 length prefix.
+    /// @return The deserialized string.
+    /// @throws bcs::Error on invalid UTF-8 or unexpected EOF.
     std::string read_string() {
         const uint32_t len = read_uleb128();
         check_sequence_length(len);
@@ -205,7 +222,12 @@ class Deserializer {
         return result;
     }
 
-    /// Read an optional value
+    /// @brief Deserialize an optional value (None = 0x00, Some = 0x01 + value).
+    /// @tparam T     Type of the optional value.
+    /// @tparam Func  Callable with signature T(Deserializer&).
+    /// @param deserializer  Function to deserialize the inner value if present.
+    /// @return std::optional containing the value or std::nullopt.
+    /// @throws bcs::Error on unexpected EOF or invalid option tag.
     template <typename T, typename Func>
     std::optional<T> read_option(Func deserializer) {
         if (BCS_UNLIKELY(offset_ >= size_)) {
@@ -221,7 +243,12 @@ class Deserializer {
         }
     }
 
-    /// Read a vector with element deserializer
+    /// @brief Deserialize a vector with ULEB128 length prefix and per-element deserializer.
+    /// @tparam T     Element type.
+    /// @tparam Func  Callable with signature T(Deserializer&).
+    /// @param deserializer  Function to deserialize each element.
+    /// @return Vector of deserialized elements.
+    /// @throws bcs::Error on unexpected EOF or exceeded max length.
     template <typename T, typename Func>
     std::vector<T> read_vector(Func deserializer) {
         const uint32_t len = read_uleb128();
@@ -235,7 +262,15 @@ class Deserializer {
         return result;
     }
 
-    /// Read a map with key/value deserializers
+    /// @brief Deserialize a map, validating that keys are sorted and unique.
+    /// @tparam K          Key type.
+    /// @tparam V          Value type.
+    /// @tparam KeyFunc    Callable with signature K(Deserializer&).
+    /// @tparam ValueFunc  Callable with signature V(Deserializer&).
+    /// @param key_deserializer    Function to deserialize keys.
+    /// @param value_deserializer  Function to deserialize values.
+    /// @return Deserialized map.
+    /// @throws bcs::Error on non-canonical key order or duplicate keys.
     template <typename K, typename V, typename KeyFunc, typename ValueFunc>
     std::map<K, V> read_map(KeyFunc key_deserializer,
                             ValueFunc value_deserializer) {
@@ -290,7 +325,8 @@ class Deserializer {
         return *this;
     }
 
-    /// Check that all input has been consumed
+    /// @brief Verify that all input has been consumed.
+    /// @throws bcs::Error if there are remaining unconsumed bytes.
     void check_end() {
         if (BCS_UNLIKELY(offset_ < size_)) {
             throw Error::remaining_input(size_ - offset_);
