@@ -50,7 +50,9 @@ public class BcsSerializer
 
     #region Boolean
 
-    /// <summary>Serializes a boolean value.</summary>
+    /// <summary>Serializes a boolean value (<c>0x00</c> = false, <c>0x01</c> = true).</summary>
+    /// <param name="value">The boolean to serialize.</param>
+    /// <returns>This serializer for method chaining.</returns>
     public BcsSerializer WriteBool(bool value)
     {
         EnsureCapacity(1);
@@ -63,6 +65,8 @@ public class BcsSerializer
     #region Unsigned Integers
 
     /// <summary>Serializes an unsigned 8-bit integer.</summary>
+    /// <param name="value">Value to serialize (0–255).</param>
+    /// <returns>This serializer for method chaining.</returns>
     public BcsSerializer WriteU8(byte value)
     {
         EnsureCapacity(1);
@@ -71,6 +75,8 @@ public class BcsSerializer
     }
 
     /// <summary>Serializes an unsigned 16-bit integer (little-endian).</summary>
+    /// <param name="value">Value to serialize.</param>
+    /// <returns>This serializer for method chaining.</returns>
     public BcsSerializer WriteU16(ushort value)
     {
         EnsureCapacity(2);
@@ -80,6 +86,8 @@ public class BcsSerializer
     }
 
     /// <summary>Serializes an unsigned 32-bit integer (little-endian).</summary>
+    /// <param name="value">Value to serialize.</param>
+    /// <returns>This serializer for method chaining.</returns>
     public BcsSerializer WriteU32(uint value)
     {
         EnsureCapacity(4);
@@ -89,6 +97,8 @@ public class BcsSerializer
     }
 
     /// <summary>Serializes an unsigned 64-bit integer (little-endian).</summary>
+    /// <param name="value">Value to serialize.</param>
+    /// <returns>This serializer for method chaining.</returns>
     public BcsSerializer WriteU64(ulong value)
     {
         EnsureCapacity(8);
@@ -201,7 +211,10 @@ public class BcsSerializer
 
     #region Bytes and Strings
 
-    /// <summary>Serializes a byte array (length-prefixed with ULEB128).</summary>
+    /// <summary>Serializes a byte array with ULEB128 length prefix.</summary>
+    /// <param name="value">Bytes to serialize.</param>
+    /// <returns>This serializer for method chaining.</returns>
+    /// <exception cref="BcsException">Thrown when length exceeds <see cref="MaxSequenceLength"/>.</exception>
     public BcsSerializer WriteBytes(ReadOnlySpan<byte> value)
     {
         if (value.Length > MaxSequenceLength)
@@ -213,7 +226,10 @@ public class BcsSerializer
         return this;
     }
 
-    /// <summary>Serializes a UTF-8 string (length-prefixed with ULEB128).</summary>
+    /// <summary>Serializes a UTF-8 string with ULEB128 length prefix.</summary>
+    /// <param name="value">String to serialize.</param>
+    /// <returns>This serializer for method chaining.</returns>
+    /// <exception cref="BcsException">Thrown when byte length exceeds <see cref="MaxSequenceLength"/>.</exception>
     public BcsSerializer WriteString(string value)
     {
         // Get byte count first to avoid intermediate allocation when possible
@@ -260,7 +276,11 @@ public class BcsSerializer
         return this;
     }
 
-    /// <summary>Serializes an optional value.</summary>
+    /// <summary>Serializes an optional reference-type value (<c>None</c> = <c>0x00</c>, <c>Some</c> = <c>0x01</c> + value).</summary>
+    /// <typeparam name="T">The type of the optional value.</typeparam>
+    /// <param name="value">The value, or <c>null</c> for None.</param>
+    /// <param name="serializer">Action to serialize the inner value if present.</param>
+    /// <returns>This serializer for method chaining.</returns>
     public BcsSerializer WriteOption<T>(T? value, Action<BcsSerializer, T> serializer) where T : class
     {
         if (value is null)
@@ -275,7 +295,11 @@ public class BcsSerializer
         return this;
     }
 
-    /// <summary>Serializes an optional value type.</summary>
+    /// <summary>Serializes an optional value-type value (<c>None</c> = <c>0x00</c>, <c>Some</c> = <c>0x01</c> + value).</summary>
+    /// <typeparam name="T">The type of the optional value.</typeparam>
+    /// <param name="value">The nullable value, or <c>null</c> for None.</param>
+    /// <param name="serializer">Action to serialize the inner value if present.</param>
+    /// <returns>This serializer for method chaining.</returns>
     public BcsSerializer WriteOption<T>(T? value, Action<BcsSerializer, T> serializer) where T : struct
     {
         if (value is null)
@@ -305,7 +329,12 @@ public class BcsSerializer
         return this;
     }
 
-    /// <summary>Serializes a vector of values.</summary>
+    /// <summary>Serializes a vector of values with ULEB128 length prefix.</summary>
+    /// <typeparam name="T">The element type.</typeparam>
+    /// <param name="values">The list of values to serialize.</param>
+    /// <param name="serializer">Action to serialize each element.</param>
+    /// <returns>This serializer for method chaining.</returns>
+    /// <exception cref="BcsException">Thrown when list count exceeds <see cref="MaxSequenceLength"/>.</exception>
     public BcsSerializer WriteVector<T>(IReadOnlyList<T> values, Action<BcsSerializer, T> serializer)
     {
         WriteVectorLength(values.Count);
@@ -450,12 +479,14 @@ public class BcsSerializer
     #region Utility
 
     /// <summary>Returns the serialized bytes as a new array.</summary>
+    /// <returns>A new byte array containing a copy of the serialized data.</returns>
     public byte[] ToArray() => _buffer.AsSpan(0, _size).ToArray();
 
-    /// <summary>Returns the serialized bytes as a span.</summary>
+    /// <summary>Returns the serialized bytes as a read-only span (zero-copy).</summary>
+    /// <returns>A span over the internal buffer. Only valid until the next write or <see cref="Clear"/>.</returns>
     public ReadOnlySpan<byte> AsSpan() => _buffer.AsSpan(0, _size);
 
-    /// <summary>Returns the current length in bytes.</summary>
+    /// <summary>Gets the current number of serialized bytes.</summary>
     public int Length => _size;
 
     /// <summary>Clears the serializer for reuse.</summary>
