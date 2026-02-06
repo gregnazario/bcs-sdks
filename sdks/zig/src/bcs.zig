@@ -141,7 +141,18 @@ pub fn uleb128Size(value: u32) usize {
 // Serializer
 // ============================================================================
 
-/// BCS Serializer
+/// BCS Serializer — manual serialization API.
+///
+/// Provides explicit methods for serializing each BCS type. All write methods
+/// return `Error` on failure (out of memory, exceeded limits, etc.).
+///
+/// ```zig
+/// var ser = Serializer.init(allocator);
+/// defer ser.deinit();
+/// try ser.writeU64(12345);
+/// try ser.writeString("hello");
+/// const bytes = ser.toSlice();
+/// ```
 pub const Serializer = struct {
     buffer: std.ArrayListUnmanaged(u8),
     allocator: Allocator,
@@ -232,6 +243,7 @@ pub const Serializer = struct {
     // Boolean
     // --------------------------------------------------------------------
 
+    /// Serialize a boolean value (`0x00` = false, `0x01` = true).
     pub inline fn writeBool(self: *Self, value: bool) Error!void {
         try self.appendByte(@intFromBool(value));
     }
@@ -240,30 +252,36 @@ pub const Serializer = struct {
     // Unsigned Integers (using std.mem for optimized writes)
     // --------------------------------------------------------------------
 
+    /// Serialize an unsigned 8-bit integer.
     pub inline fn writeU8(self: *Self, value: u8) Error!void {
         try self.appendByte(value);
     }
 
+    /// Serialize an unsigned 16-bit integer (little-endian).
     pub inline fn writeU16(self: *Self, value: u16) Error!void {
         const ptr = try self.reserveBytes(2);
         mem.writeInt(u16, ptr, value, .little);
     }
 
+    /// Serialize an unsigned 32-bit integer (little-endian).
     pub inline fn writeU32(self: *Self, value: u32) Error!void {
         const ptr = try self.reserveBytes(4);
         mem.writeInt(u32, ptr, value, .little);
     }
 
+    /// Serialize an unsigned 64-bit integer (little-endian).
     pub inline fn writeU64(self: *Self, value: u64) Error!void {
         const ptr = try self.reserveBytes(8);
         mem.writeInt(u64, ptr, value, .little);
     }
 
+    /// Serialize an unsigned 128-bit integer (little-endian).
     pub inline fn writeU128(self: *Self, value: u128) Error!void {
         const ptr = try self.reserveBytes(16);
         mem.writeInt(u128, ptr, value, .little);
     }
 
+    /// Serialize an unsigned 256-bit integer as a 32-byte little-endian array.
     pub fn writeU256(self: *Self, value: [32]u8) Error!void {
         try self.appendBytes(&value);
     }
@@ -272,26 +290,32 @@ pub const Serializer = struct {
     // Signed Integers
     // --------------------------------------------------------------------
 
+    /// Serialize a signed 8-bit integer (two's complement).
     pub inline fn writeI8(self: *Self, value: i8) Error!void {
         try self.appendByte(@bitCast(value));
     }
 
+    /// Serialize a signed 16-bit integer (little-endian, two's complement).
     pub inline fn writeI16(self: *Self, value: i16) Error!void {
         try self.writeU16(@bitCast(value));
     }
 
+    /// Serialize a signed 32-bit integer (little-endian, two's complement).
     pub inline fn writeI32(self: *Self, value: i32) Error!void {
         try self.writeU32(@bitCast(value));
     }
 
+    /// Serialize a signed 64-bit integer (little-endian, two's complement).
     pub inline fn writeI64(self: *Self, value: i64) Error!void {
         try self.writeU64(@bitCast(value));
     }
 
+    /// Serialize a signed 128-bit integer (little-endian, two's complement).
     pub inline fn writeI128(self: *Self, value: i128) Error!void {
         try self.writeU128(@bitCast(value));
     }
 
+    /// Serialize a signed 256-bit integer as a 32-byte little-endian two's complement array.
     pub fn writeI256(self: *Self, value: [32]u8) Error!void {
         try self.appendBytes(&value);
     }
@@ -300,6 +324,7 @@ pub const Serializer = struct {
     // ULEB128 (optimized inline encoding)
     // --------------------------------------------------------------------
 
+    /// Serialize a ULEB128-encoded unsigned 32-bit integer.
     pub fn writeUleb128(self: *Self, value: u32) Error!void {
         // Fast path for common small values (0-127)
         if (value < 0x80) {
@@ -315,16 +340,19 @@ pub const Serializer = struct {
     // Bytes and Strings
     // --------------------------------------------------------------------
 
+    /// Serialize raw bytes without a length prefix.
     pub fn writeFixedBytes(self: *Self, bytes: []const u8) Error!void {
         try self.appendBytes(bytes);
     }
 
+    /// Serialize a byte slice with ULEB128 length prefix.
     pub fn writeBytes(self: *Self, bytes: []const u8) Error!void {
         if (bytes.len > max_sequence_length) return Error.ExceededMaxLength;
         try self.writeUleb128(@intCast(bytes.len));
         try self.appendBytes(bytes);
     }
 
+    /// Serialize a UTF-8 string with ULEB128 length prefix. Validates UTF-8.
     pub fn writeString(self: *Self, str: []const u8) Error!void {
         // Validate UTF-8
         if (!std.unicode.utf8ValidateSlice(str)) {
@@ -343,14 +371,17 @@ pub const Serializer = struct {
     // Composite Types
     // --------------------------------------------------------------------
 
+    /// Write a None option tag (`0x00`).
     pub fn writeOptionNone(self: *Self) Error!void {
         try self.appendByte(0);
     }
 
+    /// Write a Some option tag (`0x01`). Caller must then write the value.
     pub fn writeOptionSome(self: *Self) Error!void {
         try self.appendByte(1);
     }
 
+    /// Write a vector length prefix (ULEB128). Caller then writes elements.
     pub fn writeVectorLen(self: *Self, len: usize) Error!void {
         if (len > max_sequence_length) return Error.ExceededMaxLength;
         try self.writeUleb128(@intCast(len));
