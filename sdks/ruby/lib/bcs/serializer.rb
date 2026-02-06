@@ -1,13 +1,25 @@
 # frozen_string_literal: true
 
 module BCS
-  # BCS Serializer - Manual serialization API
-  # Optimized to use String buffer with binary encoding for better performance
+  # BCS Serializer — manual serialization API.
+  #
+  # Provides explicit methods for serializing each BCS type with method chaining.
+  # Uses an internal binary String buffer for efficient concatenation.
+  #
+  # @example Basic usage
+  #   ser = BCS::Serializer.new
+  #   ser.write_u64(12345)
+  #   ser.write_string("hello")
+  #   ser.write_bool(true)
+  #   bytes = ser.to_bytes
   class Serializer
 
     # Default initial buffer capacity
     DEFAULT_CAPACITY = 256
 
+    # Create a new serializer.
+    #
+    # @param capacity [Integer] initial buffer capacity in bytes
     def initialize(capacity: DEFAULT_CAPACITY)
       @buffer = String.new(capacity: capacity, encoding: Encoding::BINARY)
       @depth = 0
@@ -204,8 +216,11 @@ module BCS
     # ULEB128
     # ========================================================================
 
-    # Write a ULEB128-encoded length
-    # Optimized with inline fast path for single-byte values (0-127)
+    # Write a ULEB128-encoded unsigned integer.
+    # Optimized with inline fast path for single-byte values (0-127).
+    #
+    # @param value [Integer] non-negative integer fitting in u32
+    # @return [Serializer] self for chaining
     def write_uleb128(value)
       if value < 0x80
         # Fast path: single byte for values 0-127
@@ -221,7 +236,10 @@ module BCS
     # BYTES AND STRINGS
     # ========================================================================
 
-    # Write raw bytes (without length prefix)
+    # Write raw bytes without a length prefix.
+    #
+    # @param data [String, Array<Integer>] bytes to write
+    # @return [Serializer] self for chaining
     def write_fixed_bytes(data)
       @buffer << if data.is_a?(String)
                    data.b
@@ -231,7 +249,11 @@ module BCS
       self
     end
 
-    # Write bytes with ULEB128 length prefix
+    # Write bytes with ULEB128 length prefix.
+    #
+    # @param data [String, Array<Integer>] bytes to serialize
+    # @return [Serializer] self for chaining
+    # @raise [BCS::Error] if length exceeds MAX_SEQUENCE_LENGTH
     def write_bytes(data)
       if data.is_a?(String)
         check_sequence_length(data.bytesize)
@@ -245,7 +267,11 @@ module BCS
       self
     end
 
-    # Write a UTF-8 string with ULEB128 length prefix
+    # Write a UTF-8 string with ULEB128 length prefix.
+    #
+    # @param value [String] the string to serialize
+    # @return [Serializer] self for chaining
+    # @raise [BCS::Error] if byte length exceeds MAX_SEQUENCE_LENGTH
     def write_string(value)
       bytes = value.encode("UTF-8").b
       check_sequence_length(bytes.bytesize)
@@ -341,9 +367,15 @@ module BCS
       self
     end
 
-    # Write a map with key/value serializers (sorted by serialized key bytes)
-    # @param map [Hash] The map to serialize
-    # @yield [key_ser, value_ser] Blocks to serialize keys and values
+    # Write a map sorted by serialized key bytes.
+    #
+    # Keys are serialized via the block, sorted lexicographically by their byte
+    # representation, then the sorted entries are written with ULEB128 length prefix.
+    #
+    # @param map [Hash] the map to serialize
+    # @yield [ser, key] block to serialize each key
+    # @return [Serializer] self for chaining
+    # @raise [BCS::Error] if map size exceeds MAX_SEQUENCE_LENGTH
     def write_map(map, &key_serializer)
       check_sequence_length(map.size)
 
@@ -369,7 +401,11 @@ module BCS
       self
     end
 
-    # Write an enum variant index (ULEB128)
+    # Write an enum variant index (ULEB128) and enter enum container.
+    #
+    # @param index [Integer] zero-based variant index
+    # @return [Serializer] self for chaining
+    # @raise [BCS::Error] if container depth exceeds MAX_CONTAINER_DEPTH
     def write_variant_index(index)
       enter_container
       write_uleb128(index)
