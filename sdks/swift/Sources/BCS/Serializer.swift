@@ -3,7 +3,17 @@
 
 import Foundation
 
-/// BCS Serializer - Manual serialization API
+/// BCS Serializer — manual serialization API.
+///
+/// Provides explicit methods for serializing each BCS type with method chaining.
+///
+/// ```swift
+/// let ser = BcsSerializer()
+/// ser.writeU64(12345)
+/// try ser.writeString("hello")
+/// ser.writeBool(true)
+/// let bytes = ser.toBytes()
+/// ```
 public final class BcsSerializer {
     @usableFromInline
     internal var buffer: ContiguousArray<UInt8> = []
@@ -17,7 +27,10 @@ public final class BcsSerializer {
 
     // MARK: - Boolean
 
-    /// Write a boolean value
+    /// Serialize a boolean value (`0x00` = false, `0x01` = true).
+    ///
+    /// - Parameter value: The boolean to serialize.
+    /// - Returns: `self` for method chaining.
     @inlinable
     @discardableResult
     public func writeBool(_ value: Bool) -> BcsSerializer {
@@ -27,7 +40,10 @@ public final class BcsSerializer {
 
     // MARK: - Unsigned Integers
 
-    /// Write an unsigned 8-bit integer
+    /// Serialize an unsigned 8-bit integer.
+    ///
+    /// - Parameter value: Value to serialize (0–255).
+    /// - Returns: `self` for method chaining.
     @inlinable
     @discardableResult
     public func writeU8(_ value: UInt8) -> BcsSerializer {
@@ -70,7 +86,11 @@ public final class BcsSerializer {
         return self
     }
 
-    /// Write an unsigned 128-bit integer (little-endian byte array)
+    /// Serialize an unsigned 128-bit integer as a 16-byte little-endian array.
+    ///
+    /// - Parameter value: Exactly 16 bytes in little-endian order.
+    /// - Returns: `self` for method chaining.
+    /// - Throws: `BcsError.integerOutOfRange` if `value` is not 16 bytes.
     @inlinable
     @discardableResult
     public func writeU128(_ value: [UInt8]) throws -> BcsSerializer {
@@ -81,7 +101,11 @@ public final class BcsSerializer {
         return self
     }
 
-    /// Write an unsigned 256-bit integer (little-endian byte array)
+    /// Serialize an unsigned 256-bit integer as a 32-byte little-endian array.
+    ///
+    /// - Parameter value: Exactly 32 bytes in little-endian order.
+    /// - Returns: `self` for method chaining.
+    /// - Throws: `BcsError.integerOutOfRange` if `value` is not 32 bytes.
     @inlinable
     @discardableResult
     public func writeU256(_ value: [UInt8]) throws -> BcsSerializer {
@@ -171,7 +195,11 @@ public final class BcsSerializer {
         return self
     }
 
-    /// Write bytes with ULEB128 length prefix
+    /// Serialize a byte array with ULEB128 length prefix.
+    ///
+    /// - Parameter data: Bytes to serialize.
+    /// - Returns: `self` for method chaining.
+    /// - Throws: `BcsError.exceededMaxLength` if length exceeds the maximum.
     @inlinable
     @discardableResult
     public func writeBytes(_ data: [UInt8]) throws -> BcsSerializer {
@@ -181,7 +209,11 @@ public final class BcsSerializer {
         return self
     }
 
-    /// Write a UTF-8 string with ULEB128 length prefix
+    /// Serialize a UTF-8 string with ULEB128 length prefix.
+    ///
+    /// - Parameter value: String to serialize.
+    /// - Returns: `self` for method chaining.
+    /// - Throws: `BcsError.exceededMaxLength` if byte length exceeds the maximum.
     @inlinable
     @discardableResult
     public func writeString(_ value: String) throws -> BcsSerializer {
@@ -197,7 +229,13 @@ public final class BcsSerializer {
 
     // MARK: - Composite Types
 
-    /// Write an optional value
+    /// Serialize an optional value (`None` = `0x00`, `Some` = `0x01` + value).
+    ///
+    /// - Parameters:
+    ///   - opt: The optional value, or `nil`.
+    ///   - serializer: Closure to serialize the inner value if present.
+    /// - Returns: `self` for method chaining.
+    /// - Throws: Rethrows any error from `serializer`.
     @inlinable
     @discardableResult
     public func writeOption<T>(_ opt: T?, serializer: (BcsSerializer, T) throws -> Void) throws -> BcsSerializer {
@@ -210,7 +248,13 @@ public final class BcsSerializer {
         return self
     }
 
-    /// Write a vector with element serializer
+    /// Serialize a vector with ULEB128 length prefix and per-element serializer.
+    ///
+    /// - Parameters:
+    ///   - values: Array of elements to serialize.
+    ///   - serializer: Closure to serialize each element.
+    /// - Returns: `self` for method chaining.
+    /// - Throws: `BcsError.exceededMaxLength` or any error from `serializer`.
     @inlinable
     @discardableResult
     public func writeVector<T>(_ values: [T], serializer: (BcsSerializer, T) throws -> Void) throws -> BcsSerializer {
@@ -222,7 +266,17 @@ public final class BcsSerializer {
         return self
     }
 
-    /// Write a map with key/value serializers (sorted by serialized key bytes)
+    /// Serialize a map sorted by serialized key bytes.
+    ///
+    /// Keys are serialized, sorted lexicographically by their byte representation,
+    /// then the sorted entries are written with ULEB128 length prefix.
+    ///
+    /// - Parameters:
+    ///   - map: Dictionary to serialize.
+    ///   - keySerializer: Closure to serialize each key.
+    ///   - valueSerializer: Closure to serialize each value.
+    /// - Returns: `self` for method chaining.
+    /// - Throws: `BcsError.exceededMaxLength` or any error from the serializer closures.
     @discardableResult
     public func writeMap<K, V>(
         _ map: [K: V],
@@ -332,7 +386,10 @@ public final class BcsSerializer {
 
     // MARK: - Container Depth
 
-    /// Enter a struct/enum container (for depth tracking)
+    /// Enter a struct/enum container for depth tracking.
+    ///
+    /// - Returns: `self` for method chaining.
+    /// - Throws: `BcsError.exceededContainerDepth` if depth exceeds the maximum.
     @inlinable
     @discardableResult
     public func enterContainer() throws -> BcsSerializer {
@@ -355,7 +412,9 @@ public final class BcsSerializer {
 
     // MARK: - Output
 
-    /// Get the serialized bytes
+    /// Get a copy of the serialized bytes.
+    ///
+    /// - Returns: New array containing the serialized data.
     @inlinable
     public func toBytes() -> [UInt8] {
         Array(buffer)
