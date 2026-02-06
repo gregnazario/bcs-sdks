@@ -20,33 +20,48 @@
 
 namespace bcs {
 
-/// BCS Serializer - Manual serialization API
+/// @brief BCS Serializer -- manual serialization API.
+///
+/// Provides explicit methods for serializing each BCS type with method chaining.
+///
+/// @code
+/// bcs::Serializer ser;
+/// ser.write_u64(12345).write_string("hello").write_bool(true);
+/// auto bytes = ser.to_bytes();
+/// @endcode
 class Serializer {
    public:
+    /// Construct a new serializer with a default 256-byte buffer.
     Serializer() : depth_(0) { buffer_.reserve(256); }
 
-    /// Pre-allocate buffer capacity
+    /// @brief Pre-allocate buffer capacity to reduce reallocations.
+    /// @param capacity  Number of bytes to reserve.
     void reserve(size_t capacity) { buffer_.reserve(capacity); }
 
-    /// Write a boolean value
+    /// @brief Serialize a boolean value (0x00 = false, 0x01 = true).
+    /// @param value  Boolean to serialize.
+    /// @return Reference to this serializer for chaining.
     Serializer& write_bool(bool value) {
         buffer_.push_back(value ? 1 : 0);
         return *this;
     }
 
-    /// Write an unsigned 8-bit integer
+    /// @brief Serialize an unsigned 8-bit integer.
+    /// @param value  Value to serialize (0-255).
     Serializer& write_u8(uint8_t value) {
         buffer_.push_back(value);
         return *this;
     }
 
-    /// Write a signed 8-bit integer
+    /// @brief Serialize a signed 8-bit integer (two's complement).
+    /// @param value  Value to serialize (-128 to 127).
     Serializer& write_i8(int8_t value) {
         buffer_.push_back(static_cast<uint8_t>(value));
         return *this;
     }
 
-    /// Write an unsigned 16-bit integer (little-endian)
+    /// @brief Serialize an unsigned 16-bit integer (little-endian).
+    /// @param value  Value to serialize.
     Serializer& write_u16(uint16_t value) {
         // Reserve and write in bulk for better performance
         const size_t pos = buffer_.size();
@@ -56,12 +71,14 @@ class Serializer {
         return *this;
     }
 
-    /// Write a signed 16-bit integer (little-endian)
+    /// @brief Serialize a signed 16-bit integer (little-endian, two's complement).
+    /// @param value  Value to serialize.
     Serializer& write_i16(int16_t value) {
         return write_u16(static_cast<uint16_t>(value));
     }
 
-    /// Write an unsigned 32-bit integer (little-endian)
+    /// @brief Serialize an unsigned 32-bit integer (little-endian).
+    /// @param value  Value to serialize.
     Serializer& write_u32(uint32_t value) {
         // Reserve and write in bulk - unrolled for performance
         const size_t pos = buffer_.size();
@@ -73,12 +90,14 @@ class Serializer {
         return *this;
     }
 
-    /// Write a signed 32-bit integer (little-endian)
+    /// @brief Serialize a signed 32-bit integer (little-endian, two's complement).
+    /// @param value  Value to serialize.
     Serializer& write_i32(int32_t value) {
         return write_u32(static_cast<uint32_t>(value));
     }
 
-    /// Write an unsigned 64-bit integer (little-endian)
+    /// @brief Serialize an unsigned 64-bit integer (little-endian).
+    /// @param value  Value to serialize.
     Serializer& write_u64(uint64_t value) {
         // Reserve and write in bulk - unrolled for performance
         const size_t pos = buffer_.size();
@@ -94,12 +113,14 @@ class Serializer {
         return *this;
     }
 
-    /// Write a signed 64-bit integer (little-endian)
+    /// @brief Serialize a signed 64-bit integer (little-endian, two's complement).
+    /// @param value  Value to serialize.
     Serializer& write_i64(int64_t value) {
         return write_u64(static_cast<uint64_t>(value));
     }
 
-    /// Write an unsigned 128-bit integer (little-endian byte array)
+    /// @brief Serialize an unsigned 128-bit integer (little-endian byte array).
+    /// @param value  16-byte array in little-endian order.
     Serializer& write_u128(const u128& value) {
         const size_t pos = buffer_.size();
         buffer_.resize(pos + 16);
@@ -107,7 +128,8 @@ class Serializer {
         return *this;
     }
 
-    /// Write a signed 128-bit integer (little-endian byte array)
+    /// @brief Serialize a signed 128-bit integer (little-endian byte array).
+    /// @param value  16-byte array in little-endian two's complement.
     Serializer& write_i128(const i128& value) {
         const size_t pos = buffer_.size();
         buffer_.resize(pos + 16);
@@ -115,7 +137,8 @@ class Serializer {
         return *this;
     }
 
-    /// Write an unsigned 256-bit integer (little-endian byte array)
+    /// @brief Serialize an unsigned 256-bit integer (little-endian byte array).
+    /// @param value  32-byte array in little-endian order.
     Serializer& write_u256(const u256& value) {
         const size_t pos = buffer_.size();
         buffer_.resize(pos + 32);
@@ -123,7 +146,8 @@ class Serializer {
         return *this;
     }
 
-    /// Write a signed 256-bit integer (little-endian byte array)
+    /// @brief Serialize a signed 256-bit integer (little-endian byte array).
+    /// @param value  32-byte array in little-endian two's complement.
     Serializer& write_i256(const i256& value) {
         const size_t pos = buffer_.size();
         buffer_.resize(pos + 32);
@@ -131,7 +155,8 @@ class Serializer {
         return *this;
     }
 
-    /// Write a ULEB128-encoded length
+    /// @brief Serialize a ULEB128-encoded unsigned 32-bit integer.
+    /// @param value  Value to encode (0 to 2^32-1).
     Serializer& write_uleb128(uint32_t value) {
         // Use stack-allocated buffer to avoid heap allocation
         auto encoded = uleb128::encode_to_buffer(value);
@@ -142,7 +167,9 @@ class Serializer {
         return *this;
     }
 
-    /// Write raw bytes (without length prefix)
+    /// @brief Serialize fixed-length raw bytes (no length prefix).
+    /// @param data  Pointer to bytes.
+    /// @param len   Number of bytes.
     Serializer& write_fixed_bytes(const uint8_t* data, size_t len) {
         const size_t pos = buffer_.size();
         buffer_.resize(pos + len);
@@ -150,12 +177,16 @@ class Serializer {
         return *this;
     }
 
-    /// Write raw bytes (without length prefix) from vector
+    /// @brief Serialize fixed-length raw bytes from a vector (no length prefix).
+    /// @param data  Byte vector.
     Serializer& write_fixed_bytes(const std::vector<uint8_t>& data) {
         return write_fixed_bytes(data.data(), data.size());
     }
 
-    /// Write bytes with ULEB128 length prefix
+    /// @brief Serialize a byte array with ULEB128 length prefix.
+    /// @param data  Pointer to bytes.
+    /// @param len   Number of bytes.
+    /// @throws bcs::Error if @p len exceeds MAX_SEQUENCE_LENGTH.
     Serializer& write_bytes(const uint8_t* data, size_t len) {
         check_sequence_length(len);
         // Pre-calculate total size needed with overflow check
@@ -173,18 +204,26 @@ class Serializer {
         return *this;
     }
 
-    /// Write bytes with ULEB128 length prefix from vector
+    /// @brief Serialize a byte vector with ULEB128 length prefix.
+    /// @param data  Byte vector to serialize.
+    /// @throws bcs::Error if data size exceeds MAX_SEQUENCE_LENGTH.
     Serializer& write_bytes(const std::vector<uint8_t>& data) {
         return write_bytes(data.data(), data.size());
     }
 
-    /// Write a UTF-8 string with ULEB128 length prefix
+    /// @brief Serialize a UTF-8 string with ULEB128 length prefix.
+    /// @param value  String view to serialize.
+    /// @throws bcs::Error if string length exceeds MAX_SEQUENCE_LENGTH.
     Serializer& write_string(std::string_view value) {
         return write_bytes(reinterpret_cast<const uint8_t*>(value.data()),
                            value.size());
     }
 
-    /// Write an optional value
+    /// @brief Serialize an optional value (None = 0x00, Some = 0x01 + value).
+    /// @tparam T     Type of the optional value.
+    /// @tparam Func  Callable with signature void(Serializer&, const T&).
+    /// @param opt         Optional value to serialize.
+    /// @param serializer  Function to serialize the inner value if present.
     template <typename T, typename Func>
     Serializer& write_option(const std::optional<T>& opt, Func serializer) {
         if (opt.has_value()) {
@@ -196,7 +235,12 @@ class Serializer {
         return *this;
     }
 
-    /// Write a vector with element serializer
+    /// @brief Serialize a vector with ULEB128 length prefix and per-element serializer.
+    /// @tparam T     Element type.
+    /// @tparam Func  Callable with signature void(Serializer&, const T&).
+    /// @param vec         Vector to serialize.
+    /// @param serializer  Function to serialize each element.
+    /// @throws bcs::Error if vector size exceeds MAX_SEQUENCE_LENGTH.
     template <typename T, typename Func>
     Serializer& write_vector(const std::vector<T>& vec, Func serializer) {
         check_sequence_length(vec.size());
@@ -207,7 +251,19 @@ class Serializer {
         return *this;
     }
 
-    /// Write a map with key/value serializers (sorted by serialized key bytes)
+    /// @brief Serialize a map sorted by serialized key bytes.
+    ///
+    /// Keys are serialized, sorted lexicographically by their byte representation,
+    /// then the sorted entries are written with ULEB128 length prefix.
+    ///
+    /// @tparam K          Key type.
+    /// @tparam V          Value type.
+    /// @tparam KeyFunc    Callable with signature void(Serializer&, const K&).
+    /// @tparam ValueFunc  Callable with signature void(Serializer&, const V&).
+    /// @param map               Map to serialize.
+    /// @param key_serializer    Function to serialize keys.
+    /// @param value_serializer  Function to serialize values.
+    /// @throws bcs::Error if map size exceeds MAX_SEQUENCE_LENGTH.
     template <typename K, typename V, typename KeyFunc, typename ValueFunc>
     Serializer& write_map(const std::map<K, V>& map, KeyFunc key_serializer,
                           ValueFunc value_serializer) {
@@ -246,12 +302,14 @@ class Serializer {
         return *this;
     }
 
-    /// Write an enum variant index
+    /// @brief Serialize an enum variant index (ULEB128-encoded).
+    /// @param index  Zero-based variant index.
     Serializer& write_variant_index(uint32_t index) {
         return write_uleb128(index);
     }
 
-    /// Enter a struct/enum container (for depth tracking)
+    /// @brief Enter a struct/enum container for depth tracking.
+    /// @throws bcs::Error if container depth exceeds MAX_CONTAINER_DEPTH.
     Serializer& enter_container() {
         if (depth_ >= MAX_CONTAINER_DEPTH) {
             throw Error::exceeded_container_depth(depth_ + 1);
@@ -260,22 +318,24 @@ class Serializer {
         return *this;
     }
 
-    /// Leave a struct/enum container
+    /// @brief Leave a struct/enum container, decrementing depth.
     Serializer& leave_container() {
         --depth_;
         return *this;
     }
 
-    /// Get the serialized bytes
+    /// @brief Get a copy of the serialized bytes.
+    /// @return New vector containing the serialized data.
     [[nodiscard]] std::vector<uint8_t> to_bytes() const { return buffer_; }
 
-    /// Get a view of the serialized bytes
+    /// @brief Get a const reference to the internal buffer (zero-copy).
+    /// @return Const reference to the serialized data.
     [[nodiscard]] const std::vector<uint8_t>& bytes() const { return buffer_; }
 
-    /// Get the current size of the buffer
+    /// @brief Get the current number of serialized bytes.
     [[nodiscard]] size_t size() const { return buffer_.size(); }
 
-    /// Clear the buffer
+    /// @brief Clear the buffer and reset depth for reuse.
     void clear() {
         buffer_.clear();
         depth_ = 0;
