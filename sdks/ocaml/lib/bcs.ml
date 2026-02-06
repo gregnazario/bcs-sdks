@@ -1,4 +1,23 @@
-(** Binary Canonical Serialization (BCS) for OCaml *)
+(** Binary Canonical Serialization (BCS) for OCaml.
+
+    BCS is a deterministic binary serialization format that guarantees
+    canonical representation — every value has exactly one valid encoding.
+
+    {2 Quick Start}
+    {[
+      let ser = Serializer.create () in
+      Serializer.write_u64 ser 12345L;
+      Serializer.write_string ser "hello";
+      Serializer.write_bool ser true;
+      let bytes = Serializer.to_bytes ser in
+
+      let des = Deserializer.create bytes in
+      let num = Deserializer.read_u64 des in
+      let str = Deserializer.read_string des in
+      let flag = Deserializer.read_bool des in
+      Deserializer.check_end des
+    ]}
+*)
 
 (* ============================================================================
    Constants
@@ -105,13 +124,20 @@ end
    Serializer
    ============================================================================ *)
 
+(** BCS Serializer — manual serialization API. *)
 module Serializer = struct
   type t = { mutable buffer : Buffer.t; mutable depth : int }
 
+  (** Create a new serializer with a default 256-byte buffer. *)
   let create () = { buffer = Buffer.create 256; depth = 0 }
+
+  (** Get the serialized output as a [bytes] value. *)
   let to_bytes t = Buffer.to_bytes t.buffer
+
+  (** Get the current number of serialized bytes. *)
   let size t = Buffer.length t.buffer
 
+  (** Reset the serializer for reuse without reallocating the buffer. *)
   let reset t =
     Buffer.reset t.buffer;
     t.depth <- 0
@@ -121,58 +147,73 @@ module Serializer = struct
   let write_bytes_raw t data =
     Buffer.add_bytes t.buffer data
 
+  (** Enter a struct/enum container for depth tracking.
+      @raise Bcs_error if depth exceeds {!max_container_depth}. *)
   let enter_container t name =
     if t.depth >= max_container_depth then
       raise (Bcs_error (Exceeded_container_depth name));
     t.depth <- t.depth + 1
 
+  (** Leave a struct/enum container, decrementing the depth counter. *)
   let leave_container t = if t.depth > 0 then t.depth <- t.depth - 1
 
   let check_sequence_length len =
     if len > max_sequence_length then
       raise (Bcs_error (Exceeded_max_length len))
 
-  (* Boolean *)
+  (** Serialize a boolean value ([0x00] = false, [0x01] = true). *)
   let write_bool t value = write_byte t (if value then 1 else 0)
 
-  (* Unsigned Integers *)
+  (** Serialize an unsigned 8-bit integer.
+      @raise Bcs_error if [value] is out of range [0, 255]. *)
   let write_u8 t value =
     if value < 0 || value > 255 then
       raise (Bcs_error (Integer_out_of_range "u8"));
     write_byte t value
 
+  (** Serialize an unsigned 16-bit integer (little-endian).
+      @raise Bcs_error if [value] is out of range [0, 65535]. *)
   let write_u16 t value =
     if value < 0 || value > 65535 then
       raise (Bcs_error (Integer_out_of_range "u16"));
     write_byte t (value land 0xFF);
     write_byte t ((value lsr 8) land 0xFF)
 
+  (** Serialize an unsigned 32-bit integer (little-endian). *)
   let write_u32 t value =
     for i = 0 to 3 do
       write_byte t (Int32.to_int (Int32.logand (Int32.shift_right_logical value (i * 8)) 0xFFl))
     done
 
+  (** Serialize an unsigned 64-bit integer (little-endian). *)
   let write_u64 t value =
     for i = 0 to 7 do
       write_byte t (Int64.to_int (Int64.logand (Int64.shift_right_logical value (i * 8)) 0xFFL))
     done
 
+  (** Serialize an unsigned 128-bit integer as 16 bytes in little-endian order.
+      @raise Bcs_error if [data] is not exactly 16 bytes. *)
   let write_u128 t data =
     if Bytes.length data <> 16 then
       raise (Bcs_error (Integer_out_of_range "u128"));
     write_bytes_raw t data
 
+  (** Serialize an unsigned 256-bit integer as 32 bytes in little-endian order.
+      @raise Bcs_error if [data] is not exactly 32 bytes. *)
   let write_u256 t data =
     if Bytes.length data <> 32 then
       raise (Bcs_error (Integer_out_of_range "u256"));
     write_bytes_raw t data
 
-  (* Signed Integers *)
+  (** Serialize a signed 8-bit integer (two's complement).
+      @raise Bcs_error if [value] is out of range [-128, 127]. *)
   let write_i8 t value =
     if value < -128 || value > 127 then
       raise (Bcs_error (Integer_out_of_range "i8"));
     write_byte t (value land 0xFF)
 
+  (** Serialize a signed 16-bit integer (little-endian, two's complement).
+      @raise Bcs_error if [value] is out of range. *)
   let write_i16 t value =
     if value < -32768 || value > 32767 then
       raise (Bcs_error (Integer_out_of_range "i16"));
@@ -180,17 +221,23 @@ module Serializer = struct
     write_byte t (unsigned land 0xFF);
     write_byte t ((unsigned lsr 8) land 0xFF)
 
+  (** Serialize a signed 32-bit integer (little-endian, two's complement). *)
   let write_i32 t value = write_u32 t value
+  (** Serialize a signed 64-bit integer (little-endian, two's complement). *)
   let write_i64 t value = write_u64 t value
+  (** Serialize a signed 128-bit integer (little-endian, two's complement). *)
   let write_i128 t data = write_u128 t data
+  (** Serialize a signed 256-bit integer (little-endian, two's complement). *)
   let write_i256 t data = write_u256 t data
 
-  (* ULEB128 *)
+  (** Serialize a ULEB128-encoded unsigned integer. *)
   let write_uleb128 t value = write_bytes_raw t (Uleb128.encode value)
 
-  (* Bytes and Strings *)
+  (** Serialize raw bytes without a length prefix. *)
   let write_fixed_bytes t data = write_bytes_raw t data
 
+  (** Serialize a byte sequence with ULEB128 length prefix.
+      @raise Bcs_error if length exceeds {!max_sequence_length}. *)
   let write_bytes t data =
     let len = Bytes.length data in
     check_sequence_length len;
