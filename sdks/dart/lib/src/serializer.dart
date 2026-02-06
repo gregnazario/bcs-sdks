@@ -4,9 +4,22 @@ import 'constants.dart';
 import 'errors.dart';
 import 'uleb128.dart';
 
-/// BCS Serializer - Manual serialization API
+/// BCS Serializer — manual serialization API.
+///
+/// Provides explicit methods for serializing each BCS type with method chaining.
+///
+/// ```dart
+/// final ser = BcsSerializer();
+/// ser.writeU64(BigInt.from(12345));
+/// ser.writeString('hello');
+/// ser.writeBool(true);
+/// final bytes = ser.toBytes();
+/// ```
 class BcsSerializer {
-  /// Create a serializer with optional initial capacity
+  /// Creates a serializer with the given [initialCapacity] in bytes.
+  ///
+  /// The internal buffer grows automatically when needed. Setting a larger
+  /// initial capacity reduces reallocations for large outputs.
   BcsSerializer([int initialCapacity = 256])
       : _buffer = Uint8List(initialCapacity);
 
@@ -39,7 +52,7 @@ class BcsSerializer {
   // BOOLEAN
   // ==========================================================================
 
-  /// Write a boolean value
+  /// Serializes a boolean [value] (`0x00` = false, `0x01` = true).
   BcsSerializer writeBool(bool value) {
     _ensureCapacity(1);
     _buffer[_size++] = value ? 1 : 0;
@@ -50,7 +63,7 @@ class BcsSerializer {
   // UNSIGNED INTEGERS
   // ==========================================================================
 
-  /// Write an unsigned 8-bit integer
+  /// Serializes an unsigned 8-bit integer [value] (0–255).
   BcsSerializer writeU8(int value) {
     if (value < 0 || value > u8Max) {
       throw BcsError.integerOutOfRange('u8');
@@ -60,7 +73,7 @@ class BcsSerializer {
     return this;
   }
 
-  /// Write an unsigned 16-bit integer (little-endian)
+  /// Serializes an unsigned 16-bit integer [value] in little-endian byte order.
   BcsSerializer writeU16(int value) {
     if (value < 0 || value > u16Max) {
       throw BcsError.integerOutOfRange('u16');
@@ -72,7 +85,7 @@ class BcsSerializer {
     return this;
   }
 
-  /// Write an unsigned 32-bit integer (little-endian)
+  /// Serializes an unsigned 32-bit integer [value] in little-endian byte order.
   BcsSerializer writeU32(int value) {
     if (value < 0 || value > u32Max) {
       throw BcsError.integerOutOfRange('u32');
@@ -87,7 +100,7 @@ class BcsSerializer {
     return this;
   }
 
-  /// Write an unsigned 64-bit integer (little-endian)
+  /// Serializes an unsigned 64-bit integer [value] in little-endian byte order.
   BcsSerializer writeU64(BigInt value) {
     if (value < BigInt.zero || value > u64Max) {
       throw BcsError.integerOutOfRange('u64');
@@ -244,7 +257,7 @@ class BcsSerializer {
     return this;
   }
 
-  /// Write bytes with ULEB128 length prefix
+  /// Serializes a byte array [data] with ULEB128 length prefix.
   BcsSerializer writeBytes(Uint8List data) {
     _checkSequenceLength(data.length);
     // Pre-calculate total size needed
@@ -256,7 +269,7 @@ class BcsSerializer {
     return this;
   }
 
-  /// Write a UTF-8 string with ULEB128 length prefix
+  /// Serializes a UTF-8 string [value] with ULEB128 length prefix.
   BcsSerializer writeString(String value) {
     final bytes = utf8.encode(value);
     _checkSequenceLength(bytes.length);
@@ -272,7 +285,10 @@ class BcsSerializer {
   // COMPOSITE TYPES
   // ==========================================================================
 
-  /// Write an optional value
+  /// Serializes an optional [value] (`None` = `0x00`, `Some` = `0x01` + data).
+  ///
+  /// If [value] is `null`, writes `0x00`. Otherwise writes `0x01` followed by
+  /// the result of calling [serializer] with the value.
   BcsSerializer writeOption<T>(
     T? value,
     void Function(BcsSerializer, T) serializer,
@@ -288,7 +304,9 @@ class BcsSerializer {
     return this;
   }
 
-  /// Write a vector with element serializer
+  /// Serializes a list of [values] with ULEB128 length prefix.
+  ///
+  /// Each element is serialized by calling the [serializer] function.
   BcsSerializer writeVector<T>(
     List<T> values,
     void Function(BcsSerializer, T) serializer,
@@ -301,7 +319,11 @@ class BcsSerializer {
     return this;
   }
 
-  /// Write a map with key/value serializers (sorted by serialized key bytes)
+  /// Serializes a [map] sorted by the serialized byte representation of keys.
+  ///
+  /// Each key is serialized using [keySerializer], the entries are sorted
+  /// lexicographically by key bytes, then the sorted entries are written
+  /// with a ULEB128 length prefix. Values are serialized using [valueSerializer].
   BcsSerializer writeMap<K, V>(
     Map<K, V> map,
     void Function(BcsSerializer, K) keySerializer,
