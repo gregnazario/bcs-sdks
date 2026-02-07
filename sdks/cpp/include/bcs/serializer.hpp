@@ -22,7 +22,8 @@ namespace bcs {
 
 /// @brief BCS Serializer -- manual serialization API.
 ///
-/// Provides explicit methods for serializing each BCS type with method chaining.
+/// Provides explicit methods for serializing each BCS type with method
+/// chaining.
 ///
 /// @code
 /// bcs::Serializer ser;
@@ -71,7 +72,8 @@ class Serializer {
         return *this;
     }
 
-    /// @brief Serialize a signed 16-bit integer (little-endian, two's complement).
+    /// @brief Serialize a signed 16-bit integer (little-endian, two's
+    /// complement).
     /// @param value  Value to serialize.
     Serializer& write_i16(int16_t value) {
         return write_u16(static_cast<uint16_t>(value));
@@ -90,7 +92,8 @@ class Serializer {
         return *this;
     }
 
-    /// @brief Serialize a signed 32-bit integer (little-endian, two's complement).
+    /// @brief Serialize a signed 32-bit integer (little-endian, two's
+    /// complement).
     /// @param value  Value to serialize.
     Serializer& write_i32(int32_t value) {
         return write_u32(static_cast<uint32_t>(value));
@@ -113,7 +116,8 @@ class Serializer {
         return *this;
     }
 
-    /// @brief Serialize a signed 64-bit integer (little-endian, two's complement).
+    /// @brief Serialize a signed 64-bit integer (little-endian, two's
+    /// complement).
     /// @param value  Value to serialize.
     Serializer& write_i64(int64_t value) {
         return write_u64(static_cast<uint64_t>(value));
@@ -177,7 +181,8 @@ class Serializer {
         return *this;
     }
 
-    /// @brief Serialize fixed-length raw bytes from a vector (no length prefix).
+    /// @brief Serialize fixed-length raw bytes from a vector (no length
+    /// prefix).
     /// @param data  Byte vector.
     Serializer& write_fixed_bytes(const std::vector<uint8_t>& data) {
         return write_fixed_bytes(data.data(), data.size());
@@ -235,7 +240,8 @@ class Serializer {
         return *this;
     }
 
-    /// @brief Serialize a vector with ULEB128 length prefix and per-element serializer.
+    /// @brief Serialize a vector with ULEB128 length prefix and per-element
+    /// serializer.
     /// @tparam T     Element type.
     /// @tparam Func  Callable with signature void(Serializer&, const T&).
     /// @param vec         Vector to serialize.
@@ -253,8 +259,9 @@ class Serializer {
 
     /// @brief Serialize a map sorted by serialized key bytes.
     ///
-    /// Keys are serialized, sorted lexicographically by their byte representation,
-    /// then the sorted entries are written with ULEB128 length prefix.
+    /// Keys are serialized, sorted lexicographically by their byte
+    /// representation, then the sorted entries are written with ULEB128 length
+    /// prefix.
     ///
     /// @tparam K          Key type.
     /// @tparam V          Value type.

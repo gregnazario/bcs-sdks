@@ -296,7 +296,8 @@ bcs_error_t bcs_write_vector_len(bcs_serializer_t* ser, size_t len);
 /* Maps */
 
 /**
- * @brief Write a map length prefix (ULEB128). Caller then writes sorted key/value pairs.
+ * @brief Write a map length prefix (ULEB128). Caller then writes sorted key/value
+ * pairs.
  * @param[in,out] ser  The serializer.
  * @param[in]     len  Number of entries in the map.
  * @return BCS_OK on success, BCS_ERR_EXCEEDED_MAX_LENGTH if @p len exceeds limit.
