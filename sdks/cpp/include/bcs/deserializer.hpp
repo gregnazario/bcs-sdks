@@ -243,7 +243,8 @@ class Deserializer {
         }
     }
 
-    /// @brief Deserialize a vector with ULEB128 length prefix and per-element deserializer.
+    /// @brief Deserialize a vector with ULEB128 length prefix and per-element
+    /// deserializer.
     /// @tparam T     Element type.
     /// @tparam Func  Callable with signature T(Deserializer&).
     /// @param deserializer  Function to deserialize each element.

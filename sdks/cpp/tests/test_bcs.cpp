@@ -230,21 +230,25 @@ TEST_CASE("i32 serialization (two's complement, little-endian)") {
 TEST_CASE("i64 serialization (two's complement, little-endian)") {
     bcs::Serializer ser;
     ser.write_i64(-1);
-    CHECK(ser.to_bytes() == std::vector<uint8_t>{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff});
+    CHECK(ser.to_bytes() ==
+          std::vector<uint8_t>{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff});
 
     ser.clear();
     ser.write_i64(INT64_MAX);  // max
-    CHECK(ser.to_bytes() == std::vector<uint8_t>{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f});
+    CHECK(ser.to_bytes() ==
+          std::vector<uint8_t>{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f});
 
     ser.clear();
     ser.write_i64(INT64_MIN);  // min
-    CHECK(ser.to_bytes() == std::vector<uint8_t>{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80});
+    CHECK(ser.to_bytes() ==
+          std::vector<uint8_t>{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80});
 }
 
 TEST_CASE("i128 serialization (two's complement, little-endian)") {
     // -1 in two's complement (all 0xff)
     bcs::i128 neg_one;
-    for (auto& b : neg_one) b = 0xff;
+    for (auto& b : neg_one)
+        b = 0xff;
 
     bcs::Serializer ser;
     ser.write_i128(neg_one);
@@ -303,13 +307,15 @@ TEST_CASE("Integer deserialization") {
     }
 
     SUBCASE("i64 negative") {
-        std::vector<uint8_t> data{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+        std::vector<uint8_t> data{0xff, 0xff, 0xff, 0xff,
+                                  0xff, 0xff, 0xff, 0xff};
         bcs::Deserializer des(data);
         CHECK(des.read_i64() == -1);
     }
 
     SUBCASE("i64 min") {
-        std::vector<uint8_t> data{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80};
+        std::vector<uint8_t> data{0x00, 0x00, 0x00, 0x00,
+                                  0x00, 0x00, 0x00, 0x80};
         bcs::Deserializer des(data);
         CHECK(des.read_i64() == INT64_MIN);
     }
