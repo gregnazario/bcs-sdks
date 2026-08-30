@@ -11,6 +11,8 @@ A Ruby implementation of Binary Canonical Serialization (BCS).
 
 ## Installation
 
+> **Note:** This gem is not yet published to RubyGems. For now, build and install from source in [sdks/ruby](.).
+
 Add to your Gemfile:
 
 ```ruby

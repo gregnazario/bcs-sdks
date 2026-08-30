@@ -4,6 +4,8 @@ Binary Canonical Serialization (BCS) implementation for Python.
 
 ## Installation
 
+> **Note:** This package is not yet published to PyPI. For now, build and install from source in [sdks/python](.).
+
 ```bash
 pip install bcs
 ```
