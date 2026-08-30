@@ -37,7 +37,7 @@ module BCS
       # @param buffer [String] The buffer to append to
       # @param value [Integer] The value to encode
       # @return [String] The buffer (for chaining)
-      # rubocop:disable Metrics/AbcSize
+      # rubocop:disable-next Metrics/AbcSize
       def encode_into(buffer, value)
         raise Error.integer_out_of_range("uleb128") if value.negative? || value > MAX_VALUE
 
@@ -67,14 +67,13 @@ module BCS
         end
         buffer
       end
-      # rubocop:enable Metrics/AbcSize
 
       # Decode a ULEB128-encoded value from bytes (array or string)
       # @param data [Array<Integer>, String] The data to decode from
       # @param offset [Integer] Starting offset in the data
       # @return [Array<Integer>] Tuple of [decoded value, number of bytes consumed]
       # @raise [Error] on invalid encoding or overflow
-      # rubocop:disable Metrics/AbcSize
+      # rubocop:disable-next Metrics/AbcSize
       def decode(data, offset = 0)
         value = 0
         shift = 0
@@ -107,7 +106,6 @@ module BCS
         # If we've read MAX_BYTES and still have continuation bit, overflow
         raise Error.uleb128_overflow
       end
-      # rubocop:enable Metrics/AbcSize
 
       # Decode ULEB128 with fast path for single-byte values
       # @param data [String] The data string to decode from
