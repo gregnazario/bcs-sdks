@@ -5,22 +5,29 @@ updates:
     schedule:
       interval: weekly
     groups:
-      dependencies:
-        patterns:
-          - "*"
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
   - package-ecosystem: pip
     directory: "/sdks/python"
     schedule:
       interval: weekly
     groups:
-      dependencies:
-        patterns:
-          - "*"
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
   - package-ecosystem: cargo
     directory: "/sdks/rust"
     schedule:
       interval: weekly
     groups:
-      dependencies:
-        patterns:
-          - "*"
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
