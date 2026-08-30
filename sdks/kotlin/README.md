@@ -11,6 +11,8 @@ Idiomatic Kotlin bindings for Binary Canonical Serialization (BCS), built on top
 
 ## Installation
 
+> **Note:** This artifact is not yet published to Maven Central. For now, clone this repo, run `./gradlew publishToMavenLocal` in [sdks/kotlin](.), and add `mavenLocal()` to your repositories.
+
 Add to your `build.gradle.kts`:
 
 ```kotlin

@@ -11,6 +11,8 @@ A pure OCaml implementation of Binary Canonical Serialization (BCS).
 
 ## Installation
 
+> **Note:** This package is not yet published to opam. For now, clone this repo and run `opam install .` in [sdks/ocaml](.).
+
 ### Using opam
 
 ```bash

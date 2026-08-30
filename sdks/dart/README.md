@@ -11,6 +11,8 @@ A Dart implementation of Binary Canonical Serialization (BCS).
 
 ## Installation
 
+> **Note:** This package is not yet published to pub.dev. For now, clone this repo and depend on it by path (e.g. `path: ../bcs-sdks/sdks/dart`).
+
 Add to your `pubspec.yaml`:
 
 ```yaml

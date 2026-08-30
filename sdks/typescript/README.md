@@ -7,7 +7,7 @@ Binary Canonical Serialization (BCS) implementation for TypeScript/JavaScript.
 
 ## Installation
 
-> **Note:** This package is not yet published to npm. For now, build and install from source in [sdks/typescript](.).
+> **Note:** This package is not yet published to npm. For now, clone this repo and build it from [sdks/typescript](.) with `npm install && npm run build`.
 
 ```bash
 npm install @bcs-sdks/bcs
