@@ -7,6 +7,8 @@ Binary Canonical Serialization (BCS) implementation for Elixir.
 
 ## Installation
 
+> **Note:** This package is not yet published to Hex. For now, clone this repo and depend on it by path: `{:bcs, path: "../bcs-sdks/sdks/elixir"}`.
+
 Add `bcs` to your list of dependencies in `mix.exs`:
 
 ```elixir

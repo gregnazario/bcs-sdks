@@ -7,6 +7,14 @@ Binary Canonical Serialization (BCS) implementation for .NET.
 
 ## Installation
 
+> **Note:** This package is not yet published to NuGet (the `Bcs` name is generic and not controlled by this project). For now, clone this repo and run `make pack` in [sdks/csharp](.), then install the generated `.nupkg` from `nupkg/`:
+
+```bash
+dotnet add package Bcs --source ./nupkg
+```
+
+Once published to NuGet, the plain command will work:
+
 ```bash
 dotnet add package Bcs
 ```

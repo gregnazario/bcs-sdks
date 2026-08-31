@@ -7,6 +7,8 @@ Binary Canonical Serialization (BCS) implementation for Java.
 
 ## Installation
 
+> **Note:** This artifact is not yet published to Maven Central. For now, clone this repo and run `mvn install -DskipTests` in [sdks/java](.) to install it into your local Maven repository.
+
 ### Maven
 
 ```xml
