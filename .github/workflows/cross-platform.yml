@@ -55,7 +55,7 @@ jobs:
             cross: false
             test: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -138,7 +138,7 @@ jobs:
             goarch: wasm
             test: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v5
         with:
@@ -190,7 +190,7 @@ jobs:
           - target: wasm32-wasi
             test: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: goto-bus-stop/setup-zig@v2
         with:
@@ -214,7 +214,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: goto-bus-stop/setup-zig@v2
         with:
@@ -271,7 +271,7 @@ jobs:
             cc: gcc
             test: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install cross-compiler (Linux ARM64)
         if: matrix.cross
@@ -325,7 +325,7 @@ jobs:
     name: C (wasm-emscripten)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
@@ -381,7 +381,7 @@ jobs:
             os: windows-latest
             test: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install cross-compiler (Linux ARM64)
         if: matrix.cross
@@ -422,7 +422,7 @@ jobs:
     name: C++ (wasm-emscripten)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
@@ -474,7 +474,7 @@ jobs:
             rid: win-arm64
             test: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -517,7 +517,7 @@ jobs:
             os: ubuntu-latest
             test: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Swift (Linux)
         if: runner.os == 'Linux'

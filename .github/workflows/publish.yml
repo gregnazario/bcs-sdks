@@ -37,7 +37,7 @@ jobs:
       contents: read
       id-token: write  # For trusted publishing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -61,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: npm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -88,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: hex
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
         with:
           elixir-version: '1.16'
@@ -115,7 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: maven
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -142,7 +142,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/go-v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
@@ -164,7 +164,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: nuget
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -185,7 +185,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: crates
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Publish to crates.io
         run: cargo publish
@@ -203,7 +203,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: maven
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -228,7 +228,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/swift-v')
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build package
         run: swift build -c release
         working-directory: sdks/swift
@@ -246,7 +246,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: rubygems
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
@@ -272,7 +272,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: pub
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: stable
@@ -293,7 +293,7 @@ jobs:
   #   if: startsWith(github.ref, 'refs/tags/ocaml-v')
   #   runs-on: ubuntu-latest
   #   steps:
-  #     - uses: actions/checkout@v4
+  #     - uses: actions/checkout@v7
   #     - name: Create OPAM PR
   #       run: |
   #         echo "OPAM packages are published via PR to opam-repository"
