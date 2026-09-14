@@ -35,7 +35,7 @@ jobs:
         run: cargo bench --no-fail-fast 2>&1 | tee benchmark-results.txt
         working-directory: sdks/rust
       - name: Upload results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rust-benchmarks
           path: sdks/rust/benchmark-results.txt
@@ -52,7 +52,7 @@ jobs:
         run: go test -bench=. -benchmem ./... 2>&1 | tee benchmark-results.txt
         working-directory: sdks/go
       - name: Upload results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: go-benchmarks
           path: sdks/go/benchmark-results.txt
@@ -99,7 +99,7 @@ jobs:
           " | tee benchmark-results.txt
         working-directory: sdks/python
       - name: Upload results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: python-benchmarks
           path: sdks/python/benchmark-results.txt
@@ -157,7 +157,7 @@ jobs:
           " | tee benchmark-results.txt
         working-directory: sdks/typescript
       - name: Upload results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: typescript-benchmarks
           path: sdks/typescript/benchmark-results.txt
@@ -179,7 +179,7 @@ jobs:
           mvn exec:java -Dexec.mainClass="com.bcs.Benchmark" 2>&1 | tee benchmark-results.txt || echo "Benchmark class not found, skipping"
         working-directory: sdks/java
       - name: Upload results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: java-benchmarks
           path: sdks/java/benchmark-results.txt
@@ -204,7 +204,7 @@ jobs:
           ./build/test_bcs 2>&1 | tee benchmark-results.txt || echo "Tests completed"
         working-directory: sdks/cpp
       - name: Upload results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cpp-benchmarks
           path: sdks/cpp/benchmark-results.txt
@@ -243,7 +243,7 @@ jobs:
         working-directory: e2e-tests
       
       - name: Upload E2E results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-benchmarks
           path: |
