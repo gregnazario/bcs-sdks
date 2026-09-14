@@ -90,9 +90,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
         working-directory: sdks/typescript
-      - name: Install coverage tool
-        run: npm install -D @vitest/coverage-v8
-        working-directory: sdks/typescript
       - name: Generate coverage
         run: npm test -- --coverage --coverage.reporter=lcov
         working-directory: sdks/typescript
