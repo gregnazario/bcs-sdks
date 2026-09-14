@@ -11,7 +11,7 @@ edition = "2021"
 rust-version = "1.70"
 
 [dependencies]
-thiserror = "1.0.22"
+thiserror = "2.0.20"
 serde = { version = "1.0.117", features = ["derive"] }
 
 [dev-dependencies]
