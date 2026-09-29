@@ -46,7 +46,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'python'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -75,7 +75,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'typescript'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -104,7 +104,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'rust'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Verify version
         run: |
@@ -128,7 +128,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'java'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -152,7 +152,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'kotlin'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -177,7 +177,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'csharp'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -194,7 +194,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'go'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
@@ -211,7 +211,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'ruby'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
@@ -239,7 +239,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'swift'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run tests
         run: make test
         working-directory: sdks/swift
@@ -253,7 +253,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'elixir'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: erlef/setup-beam@v1
         with:
           elixir-version: '1.16'
@@ -280,7 +280,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'dart'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: stable
@@ -306,7 +306,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'cpp'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install tools
         run: |
           sudo apt-get update
@@ -321,7 +321,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'c'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install tools
         run: |
           sudo apt-get update
@@ -336,7 +336,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'zig'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: goto-bus-stop/setup-zig@v2
         with:
           version: '0.13.0'
@@ -359,7 +359,7 @@ jobs:
     if: needs.detect-sdk.outputs.sdk == 'ocaml'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ocaml/setup-ocaml@v2
         with:
           ocaml-compiler: '5.1'
